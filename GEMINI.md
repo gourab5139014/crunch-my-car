@@ -5,9 +5,11 @@
 ## Tech Stack & Tools
 
 - **Backend-as-a-Service:** [Supabase](https://supabase.com/)
-  - **Project Reference:** `cofmlyvqhxjkmyzbtrsy`
-  - **MCP Server:** Configured to interact with the Supabase project via `https://mcp.supabase.com/mcp?project_ref=cofmlyvqhxjkmyzbtrsy`.
-- **Primary Language (Inferred):** Python (based on `.gitignore` templates).
+  - **Environments:**
+    - **Production:** Ref `cofmlyvqhxjkmyzbtrsy` (MCP: `supabase_production`)
+    - **Staging:** Ref `yiejtkppiwhzedyfeyuv` (MCP: `supabase_staging`)
+    - **Development:** Local Docker stack via CLI (`supabase start`)
+- **Primary Language:** React (TypeScript) with Vite.
 - **Agent Enhancements:**
   - `supabase`: Specialized skill for Supabase products (Database, Auth, Edge Functions, etc.).
   - `supabase-postgres-best-practices`: Skill for optimized Postgres schema design and query writing.
