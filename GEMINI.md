@@ -5,9 +5,11 @@
 ## Tech Stack & Tools
 
 - **Backend-as-a-Service:** [Supabase](https://supabase.com/)
-  - **Project Reference:** `cofmlyvqhxjkmyzbtrsy`
-  - **MCP Server:** Configured to interact with the Supabase project via `https://mcp.supabase.com/mcp?project_ref=cofmlyvqhxjkmyzbtrsy`.
-- **Primary Language (Inferred):** Python (based on `.gitignore` templates).
+  - **Environments:**
+    - **Production:** Ref `cofmlyvqhxjkmyzbtrsy` (MCP: `supabase_production`)
+    - **Staging:** Ref `yiejtkppiwhzedyfeyuv` (MCP: `supabase_staging`)
+    - **Development:** Local Docker stack via CLI (`supabase start`)
+- **Primary Language:** React (TypeScript) with Vite.
 - **Agent Enhancements:**
   - `supabase`: Specialized skill for Supabase products (Database, Auth, Edge Functions, etc.).
   - `supabase-postgres-best-practices`: Skill for optimized Postgres schema design and query writing.
@@ -21,13 +23,30 @@
 
 ## Development Workflow
 
-### Supabase Integration
-This project is tightly integrated with Supabase. Use the following tools for development:
-- **Supabase Skill:** Triggered for any task involving Supabase services.
-- **Supabase MCP:** Provides direct access to project logs, advisors, and management APIs.
+### Multi-Environment Architecture
+The project uses a three-tier environment strategy to ensure safety and isolation. All application data lives in the **`app`** schema (not `public`).
+
+#### 1. Development (Local)
+- **Tooling:** Run `supabase start` to spin up the local Docker stack.
+- **Frontend:** The Vite dev server uses `.env.development` to connect to `127.0.0.1:54321`.
+- **Changes:** Make schema changes locally, then run `supabase db diff` to generate migration files.
+
+#### 2. Staging (Remote)
+- **Target:** Supabase project `yiejtkppiwhzedyfeyuv`.
+- **Trigger:** Any push to the **`develop`** (or currently `init`) branch.
+- **Automation:** GitHub Actions automatically runs `supabase db push` to the staging project.
+- **Purpose:** Final verification and QA before production.
+
+#### 3. Production (Remote)
+- **Target:** Supabase project `cofmlyvqhxjkmyzbtrsy`.
+- **Trigger:** Merging code into the **`main`** branch.
+- **Automation:** GitHub Actions automatically runs `supabase db push` to the production project.
 
 ### Building and Running
-*TODO: Document specific build and run commands once the application framework (e.g., FastAPI, Django, or a frontend library) is established.*
+1.  **Install Deps:** `npm install`
+2.  **Start Local Backend:** `supabase start`
+3.  **Run Frontend:** `npm run dev` (Connects to Local)
+4.  **Build for Prod:** `npm run build` (Connects to Production)
 
 ### Testing
 *TODO: Document testing practices as the codebase grows.*
