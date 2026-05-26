@@ -95,7 +95,7 @@ export default function Dashboard() {
           {cars.map((car) => (
             <Link
               key={car.id}
-              to={`/cars/${car.id}/edit`}
+              to={`/cars/${car.id}`}
               className="relative flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm hover:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:shadow-md transition-all"
             >
               <div className="flex-shrink-0">
