@@ -1,6 +1,6 @@
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
-import { supabase } from '../lib/supabase'
+import { supabaseAuth } from '../lib/supabase'
 
 export default function Login() {
   return (
@@ -15,7 +15,7 @@ export default function Login() {
           </p>
         </div>
         <Auth
-          supabaseClient={supabase}
+          supabaseClient={supabaseAuth}
           appearance={{ theme: ThemeSupa }}
           theme="light"
           providers={[]}

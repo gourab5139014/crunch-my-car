@@ -28,6 +28,9 @@ Focus: Developer experience, type safety, and CI/CD.
     - Generate types from the live schema to enable frontend type safety.
 - [ ] **Task 3.3: Unified Timeline View**
     - Create a database `VIEW` that combines refuelings, services, and expenses.
+- [ ] **Task 3.4: Vercel Integration & Hosting**
+    - Link the project to Vercel for automated frontend deployments.
+    - Configure staging and production environments on Vercel.
 
 
 ## Phase 4: Advanced Backend Features

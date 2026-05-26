@@ -7,6 +7,10 @@
     "supabase_staging": {
       "url": "https://mcp.supabase.com/mcp?project_ref=yiejtkppiwhzedyfeyuv",
       "type": "http"
+    },
+    "vercel": {
+      "url": "https://mcp.vercel.com",
+      "type": "http"
     }
   }
 }
