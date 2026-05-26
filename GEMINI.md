@@ -9,6 +9,8 @@
     - **Production:** Ref `cofmlyvqhxjkmyzbtrsy` (MCP: `supabase_production`)
     - **Staging:** Ref `yiejtkppiwhzedyfeyuv` (MCP: `supabase_staging`)
     - **Development:** Local Docker stack via CLI (`supabase start`)
+- **Frontend Hosting:** [Vercel](https://vercel.com/)
+  - **MCP Server:** Configured to interact with Vercel via `https://mcp.vercel.com` (MCP: `vercel`).
 - **Primary Language:** React (TypeScript) with Vite.
 - **Agent Enhancements:**
   - `supabase`: Specialized skill for Supabase products (Database, Auth, Edge Functions, etc.).
