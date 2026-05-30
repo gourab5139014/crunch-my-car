@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 export type ActivityType = 'fuel' | 'service' | 'expense'
@@ -29,42 +29,19 @@ interface LogActivityModalProps {
 }
 
 export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, editingRecord }: LogActivityModalProps) {
-  const [activeTab, setActiveTab] = useState<ActivityType>('fuel')
+  const [activeTab, setActiveTab] = useState<ActivityType>(editingRecord?.type ?? 'fuel')
   const [selectedCarId, setSelectedCarId] = useState(cars.length > 0 ? cars[0].id : '')
   const [loading, setLoading] = useState(false)
 
-  // Form states
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [odometer, setOdometer] = useState('')
-  const [liters, setLiters] = useState('')
-  const [cost, setCost] = useState('')
-  const [description, setDescription] = useState('')
-  const [amount, setAmount] = useState('')
-  const [category, setCategory] = useState('General')
-
-  // Pre-fill if editing
-  useEffect(() => {
-    if (editingRecord) {
-      setActiveTab(editingRecord.type)
-      setDate(editingRecord.date)
-      setOdometer(editingRecord.odometer?.toString() || '')
-      setLiters(editingRecord.liters?.toString() || '')
-      setCost(editingRecord.total_cost?.toString() || '')
-      setAmount(editingRecord.amount?.toString() || '')
-      setDescription(editingRecord.description || '')
-      setCategory(editingRecord.category || 'General')
-    } else {
-      // Reset to defaults for "Add" mode
-      setActiveTab('fuel')
-      setDate(new Date().toISOString().split('T')[0])
-      setOdometer('')
-      setLiters('')
-      setCost('')
-      setAmount('')
-      setDescription('')
-      setCategory('General')
-    }
-  }, [editingRecord, isOpen])
+  // Form states — initialized from editingRecord when editing, defaults when adding.
+  // Parent must pass a changing `key` prop to force re-mount when editingRecord changes.
+  const [date, setDate] = useState(editingRecord?.date ?? new Date().toISOString().split('T')[0])
+  const [odometer, setOdometer] = useState(editingRecord?.odometer?.toString() ?? '')
+  const [liters, setLiters] = useState(editingRecord?.liters?.toString() ?? '')
+  const [cost, setCost] = useState(editingRecord?.total_cost?.toString() ?? '')
+  const [description, setDescription] = useState(editingRecord?.description ?? '')
+  const [amount, setAmount] = useState(editingRecord?.amount?.toString() ?? '')
+  const [category, setCategory] = useState(editingRecord?.category ?? 'General')
 
   if (!isOpen) return null
 

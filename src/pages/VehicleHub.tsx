@@ -29,46 +29,44 @@ export default function VehicleHub() {
   
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
+  const [refreshTick, setRefreshTick] = useState(0)
+  const [modalKey, setModalKey] = useState(0)
   const navigate = useNavigate()
 
-  async function fetchData() {
-    if (!id) return
+  function refresh() {
     setFetching(true)
+    setRefreshTick(t => t + 1)
+  }
 
-    // Fetch car details
-    const { data: carData, error: carError } = await supabase
-      .from('cars')
-      .select('id, name')
-      .eq('id', id)
-      .single()
-
-    if (carError) {
-      console.error('Error fetching car:', carError)
-      navigate('/')
-      return
-    }
-
-    setCar(carData)
-
-    // Fetch timeline
-    const { data: timelineData, error: timelineError } = await supabase
-      .from('vehicle_timeline')
-      .select('*')
-      .eq('car_id', id)
-      .order('date', { ascending: false })
-
-    if (timelineError) {
-      console.error('Error fetching timeline:', timelineError)
-    } else {
-      setTimeline(timelineData || [])
-    }
-
-    setFetching(false)
+  function openModal(record: EditingRecord | null = null) {
+    setEditingRecord(record)
+    setModalKey(k => k + 1)
+    setIsModalOpen(true)
   }
 
   useEffect(() => {
-    fetchData()
-  }, [id, navigate])
+    if (!id) return
+    ;(async () => {
+      const [carResult, timelineResult] = await Promise.all([
+        supabase.from('cars').select('id, name').eq('id', id).single(),
+        supabase.from('vehicle_timeline').select('*').eq('car_id', id).order('date', { ascending: false }),
+      ])
+
+      if (carResult.error) {
+        console.error('Error fetching car:', carResult.error)
+        navigate('/')
+        return
+      }
+
+      if (timelineResult.error) {
+        console.error('Error fetching timeline:', timelineResult.error)
+      }
+
+      setCar(carResult.data)
+      setTimeline(timelineResult.data || [])
+      setFetching(false)
+    })()
+  }, [id, navigate, refreshTick])
 
   async function handleItemClick(entry: TimelineEntry) {
     setLoading(true)
@@ -98,8 +96,7 @@ export default function VehicleHub() {
         description: data.description,
         category: data.category
       }
-      setEditingRecord(record)
-      setIsModalOpen(true)
+      openModal(record)
     }
     setLoading(false)
   }
@@ -163,10 +160,7 @@ export default function VehicleHub() {
         </div>
         <div className="mt-4 flex md:ml-4 md:mt-0 space-x-3">
           <button
-            onClick={() => {
-              setEditingRecord(null)
-              setIsModalOpen(true)
-            }}
+            onClick={() => openModal(null)}
             className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
           >
             Log Activity
@@ -291,13 +285,14 @@ export default function VehicleHub() {
 
       {car && (
         <LogActivityModal
+          key={modalKey}
           isOpen={isModalOpen}
           onClose={() => {
             setIsModalOpen(false)
             setEditingRecord(null)
           }}
           cars={[car]}
-          onSuccess={fetchData}
+          onSuccess={refresh}
           editingRecord={editingRecord}
         />
       )}
