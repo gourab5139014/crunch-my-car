@@ -12,7 +12,7 @@ export default function Login() {
   useEffect(() => {
     const originalSignUp = supabaseAuth.auth.signUp.bind(supabaseAuth.auth)
 
-    ;(supabaseAuth.auth as any).signUp = async (...args: Parameters<typeof originalSignUp>) => {
+    ;(supabaseAuth.auth as { signUp: typeof originalSignUp }).signUp = async (...args: Parameters<typeof originalSignUp>) => {
       const result = await originalSignUp(...args)
       if (result.data?.user && !result.data?.session) {
         setConfirmationSent(true)
@@ -26,7 +26,7 @@ export default function Login() {
     }
 
     return () => {
-      ;(supabaseAuth.auth as any).signUp = originalSignUp
+      ;(supabaseAuth.auth as { signUp: typeof originalSignUp }).signUp = originalSignUp
       if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [])
