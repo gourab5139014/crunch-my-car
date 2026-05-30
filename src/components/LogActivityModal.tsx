@@ -1,5 +1,26 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+
+type ScanConfidence = 'high' | 'low' | 'none' | null
+
+async function resizeAndEncode(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const MAX = 1024
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = reject
+    img.src = objectUrl
+  })
+}
 
 export type ActivityType = 'fuel' | 'service' | 'expense'
 
@@ -43,7 +64,44 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
   const [amount, setAmount] = useState(editingRecord?.amount?.toString() ?? '')
   const [category, setCategory] = useState(editingRecord?.category ?? 'General')
 
+  // Scan state — fuel tab only, hidden in edit mode
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [odometerConf, setOdometerConf] = useState<ScanConfidence>(null)
+  const [litersConf, setLitersConf] = useState<ScanConfidence>(null)
+  const [costConf, setCostConf] = useState<ScanConfidence>(null)
+  const odometerInputRef = useRef<HTMLInputElement>(null)
+  const receiptInputRef = useRef<HTMLInputElement>(null)
+
   if (!isOpen) return null
+
+  async function handleScan(type: 'odometer' | 'receipt', file: File) {
+    setScanError(null)
+    setScanning(true)
+    try {
+      const dataUri = await resizeAndEncode(file)
+      const body = type === 'odometer' ? { odometerImage: dataUri } : { receiptImage: dataUri }
+      const { data, error } = await supabase.functions.invoke('scan-refuel', { body })
+      if (error || !data) {
+        setScanError('Scan failed — please fill in manually.')
+        return
+      }
+      if (type === 'odometer') {
+        if (data.confidence.odometer !== 'none' && data.odometer != null)
+          setOdometer(String(Math.round(data.odometer)))
+        setOdometerConf(data.confidence.odometer)
+      } else {
+        if (data.confidence.liters !== 'none' && data.liters != null)
+          setLiters(String(data.liters))
+        setLitersConf(data.confidence.liters)
+        if (data.confidence.total_cost !== 'none' && data.total_cost != null)
+          setCost(String(data.total_cost))
+        setCostConf(data.confidence.total_cost)
+      }
+    } finally {
+      setScanning(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -241,35 +299,123 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
 
                     {activeTab === 'fuel' && (
                       <>
+                        {/* Scan section — hidden in edit mode */}
+                        {!editingRecord && (
+                          <div className="rounded-lg border border-dashed border-indigo-200 bg-indigo-50 p-3">
+                            <p className="text-xs font-medium text-indigo-700 mb-2">Auto-fill from photos</p>
+                            <div className="flex gap-2">
+                              <input
+                                ref={odometerInputRef}
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleScan('odometer', file)
+                                  e.target.value = ''
+                                }}
+                              />
+                              <input
+                                ref={receiptInputRef}
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleScan('receipt', file)
+                                  e.target.value = ''
+                                }}
+                              />
+                              <button
+                                type="button"
+                                disabled={scanning}
+                                onClick={() => odometerInputRef.current?.click()}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Scan Odometer
+                              </button>
+                              <button
+                                type="button"
+                                disabled={scanning}
+                                onClick={() => receiptInputRef.current?.click()}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Scan Receipt
+                              </button>
+                            </div>
+                            {scanning && (
+                              <div className="mt-2 flex items-center gap-2 text-xs text-indigo-600">
+                                <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                Extracting values...
+                              </div>
+                            )}
+                            {scanError && <p className="mt-2 text-xs text-red-600">{scanError}</p>}
+                          </div>
+                        )}
+
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">Odometer (km)</label>
+                          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                            Odometer (km)
+                            {odometerConf === 'low' && (
+                              <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                ⚠ Verify
+                              </span>
+                            )}
+                          </label>
                           <input
                             type="number"
                             value={odometer}
-                            onChange={(e) => setOdometer(e.target.value)}
+                            onChange={(e) => { setOdometer(e.target.value); setOdometerConf(null) }}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                             required
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Liters</label>
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                              Liters
+                              {litersConf === 'low' && (
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ Verify
+                                </span>
+                              )}
+                            </label>
                             <input
                               type="number"
                               step="0.01"
                               value={liters}
-                              onChange={(e) => setLiters(e.target.value)}
+                              onChange={(e) => { setLiters(e.target.value); setLitersConf(null) }}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                               required
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Total Cost</label>
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                              Total Cost
+                              {costConf === 'low' && (
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ Verify
+                                </span>
+                              )}
+                            </label>
                             <input
                               type="number"
                               step="0.01"
                               value={cost}
-                              onChange={(e) => setCost(e.target.value)}
+                              onChange={(e) => { setCost(e.target.value); setCostConf(null) }}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                               required
                             />
