@@ -5,7 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './components/Login'
 import Dashboard from './pages/Dashboard'
 import AddVehicle from './pages/AddVehicle'
-import EditVehicle from './pages/EditVehicle'
+import VehicleHub from './pages/VehicleHub'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -63,7 +63,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/cars/new" element={<AddVehicle />} />
-              <Route path="/cars/:id/edit" element={<EditVehicle />} />
+              <Route path="/cars/:id" element={<VehicleHub />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
