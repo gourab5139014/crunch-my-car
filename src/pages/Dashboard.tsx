@@ -31,12 +31,17 @@ export default function Dashboard() {
     }
 
     if (carsData) {
-      const carsWithStats = await Promise.all(carsData.map(async (car) => {
-        const { data: stats } = await supabase.rpc('get_vehicle_stats', { p_car_id: car.id })
-        return { 
-          ...car, 
-          avg_efficiency: stats?.fuel_efficiency ?? null 
-        }
+      const carIds = carsData.map(c => c.id)
+      const { data: statsData } = await supabase.rpc('get_fleet_stats', { p_car_ids: carIds })
+      
+      const statsMap = (statsData as any[])?.reduce((acc, item) => {
+        acc[item.car_id] = item.stats
+        return acc
+      }, {} as Record<string, any>) || {}
+
+      const carsWithStats = carsData.map((car) => ({
+        ...car,
+        avg_efficiency: statsMap[car.id]?.fuel_efficiency ?? null
       }))
       setCars(carsWithStats)
     }

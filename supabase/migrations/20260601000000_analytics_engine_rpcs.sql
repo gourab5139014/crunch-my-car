@@ -132,3 +132,68 @@ AS $$
     GROUP BY m
     ORDER BY m ASC;
 $$;
+
+-- 4. Get Fleet Stats (Bulk)
+-- Resolves N+1 issues by fetching stats for multiple cars in one call.
+CREATE OR REPLACE FUNCTION app.get_fleet_stats(p_car_ids UUID[])
+RETURNS TABLE (
+    car_id UUID,
+    stats JSONB
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user_id UUID;
+BEGIN
+    SELECT auth.uid() INTO v_user_id;
+    
+    RETURN QUERY
+    WITH fuel_sums AS (
+        SELECT r.car_id, COALESCE(SUM(total_cost), 0) as cost, COUNT(*) as cnt, MIN(odometer) as min_o, MAX(odometer) as max_o
+        FROM app.refuelings r
+        WHERE r.car_id = ANY(p_car_ids) AND r.user_id = v_user_id
+        GROUP BY r.car_id
+    ),
+    service_sums AS (
+        SELECT s.car_id, COALESCE(SUM(total_cost), 0) as cost
+        FROM app.services s
+        WHERE s.car_id = ANY(p_car_ids) AND s.user_id = v_user_id
+        GROUP BY s.car_id
+    ),
+    expense_sums AS (
+        SELECT e.car_id, COALESCE(SUM(amount), 0) as cost
+        FROM app.expenses e
+        WHERE e.car_id = ANY(p_car_ids) AND e.user_id = v_user_id
+        GROUP BY e.car_id
+    ),
+    efficiency AS (
+        -- Calculate efficiency for each car: (max_o - min_o) / sum(volume after first fill)
+        SELECT 
+            r.car_id,
+            CASE 
+                WHEN MAX(r.odometer) > MIN(r.odometer) THEN
+                    (MAX(r.odometer) - MIN(r.odometer)) / NULLIF(SUM(CASE WHEN r.odometer > (SELECT MIN(odometer) FROM app.refuelings r2 WHERE r2.car_id = r.car_id) THEN r.volume ELSE 0 END), 0)
+                ELSE 0
+            END as efficiency
+        FROM app.refuelings r
+        WHERE r.car_id = ANY(p_car_ids) AND r.user_id = v_user_id
+        GROUP BY r.car_id
+    )
+    SELECT 
+        c.id,
+        JSONB_BUILD_OBJECT(
+            'total_spend', COALESCE(f.cost, 0) + COALESCE(s.cost, 0) + COALESCE(e.cost, 0),
+            'fuel_efficiency', ROUND(COALESCE(eff.efficiency, 0), 2),
+            'total_distance', COALESCE(f.max_o - f.min_o, 0),
+            'refueling_count', COALESCE(f.cnt, 0)
+        )
+    FROM app.cars c
+    LEFT JOIN fuel_sums f ON f.car_id = c.id
+    LEFT JOIN service_sums s ON s.car_id = c.id
+    LEFT JOIN expense_sums e ON e.car_id = c.id
+    LEFT JOIN efficiency eff ON eff.car_id = c.id
+    WHERE c.id = ANY(p_car_ids) AND c.user_id = v_user_id;
+END;
+$$;

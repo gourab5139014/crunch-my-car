@@ -301,7 +301,14 @@ export default function VehicleHub() {
                             <span className="font-medium text-gray-900 capitalize">{entry.activity_type}</span>: {entry.description}
                           </p>
                           {entry.odometer && (
-                            <p className="text-xs text-gray-400 mt-0.5">Odometer: {entry.odometer.toLocaleString()} km</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              Odometer: {
+                                (car.unit_preference === 'metric' 
+                                  ? entry.odometer 
+                                  : Math.round(entry.odometer * 0.621371)
+                                ).toLocaleString()
+                              } {car.unit_preference === 'metric' ? 'km' : 'mi'}
+                            </p>
                           )}
                         </div>
                         <div className="whitespace-nowrap text-right text-sm text-gray-500">
