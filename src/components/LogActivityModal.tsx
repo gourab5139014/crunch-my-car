@@ -1,5 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import PhotoDropZone, { type ExtractionResult } from './PhotoDropZone'
+
+type ScanConfidence = 'high' | 'low' | 'none' | null
+
+// American ↔ metric conversions (UI inputs in American; DB stores metric)
+const KM_PER_MILE = 1.609344
+const L_PER_GAL = 3.785411
+function miToKm(mi: number) { return mi * KM_PER_MILE }
+function kmToMi(km: number) { return Math.round(km / KM_PER_MILE) }
+function galToL(gal: number) { return gal * L_PER_GAL }
+function lToGal(l: number) { return parseFloat((l / L_PER_GAL).toFixed(3)) }
 
 export type ActivityType = 'fuel' | 'service' | 'expense'
 
@@ -7,8 +18,8 @@ export interface EditingRecord {
   id: string
   type: ActivityType
   date: string
-  odometer?: number
-  liters?: number
+  odometer?: number   // stored in km
+  volume?: number     // stored in liters
   total_cost?: number
   amount?: number
   description?: string
@@ -33,17 +44,67 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
   const [selectedCarId, setSelectedCarId] = useState(cars.length > 0 ? cars[0].id : '')
   const [loading, setLoading] = useState(false)
 
-  // Form states — initialized from editingRecord when editing, defaults when adding.
-  // Parent must pass a changing `key` prop to force re-mount when editingRecord changes.
+  // Form state in American display units; DB values converted on load and save.
   const [date, setDate] = useState(editingRecord?.date ?? new Date().toISOString().split('T')[0])
-  const [odometer, setOdometer] = useState(editingRecord?.odometer?.toString() ?? '')
-  const [liters, setLiters] = useState(editingRecord?.liters?.toString() ?? '')
+  const [odometer, setOdometer] = useState(
+    editingRecord?.odometer != null ? String(kmToMi(editingRecord.odometer)) : ''
+  )
+  const [gallons, setGallons] = useState(
+    editingRecord?.volume != null ? String(lToGal(editingRecord.volume)) : ''
+  )
   const [cost, setCost] = useState(editingRecord?.total_cost?.toString() ?? '')
   const [description, setDescription] = useState(editingRecord?.description ?? '')
   const [amount, setAmount] = useState(editingRecord?.amount?.toString() ?? '')
   const [category, setCategory] = useState(editingRecord?.category ?? 'General')
 
+  const [odometerConf, setOdometerConf] = useState<ScanConfidence>(null)
+  const [gallonsConf, setGallonsConf] = useState<ScanConfidence>(null)
+  const [costConf, setCostConf] = useState<ScanConfidence>(null)
+
+  // Pre-fill if editing
+  useEffect(() => {
+    if (editingRecord) {
+      setActiveTab(editingRecord.type)
+      setDate(editingRecord.date)
+      setOdometer(editingRecord.odometer != null ? String(kmToMi(editingRecord.odometer)) : '')
+      setGallons(editingRecord.volume != null ? String(lToGal(editingRecord.volume)) : '')
+      setCost(editingRecord.total_cost?.toString() || '')
+      setAmount(editingRecord.amount?.toString() || '')
+      setDescription(editingRecord.description || '')
+      setCategory(editingRecord.category || 'General')
+    } else {
+      // Reset to defaults for "Add" mode
+      setActiveTab('fuel')
+      setDate(new Date().toISOString().split('T')[0])
+      setOdometer('')
+      setGallons('')
+      setCost('')
+      setAmount('')
+      setDescription('')
+      setCategory('General')
+    }
+    setOdometerConf(null)
+    setGallonsConf(null)
+    setCostConf(null)
+  }, [editingRecord, isOpen])
+
   if (!isOpen) return null
+
+  function handleExtracted(result: ExtractionResult) {
+    // Values are metric (km, liters) — convert to American for form display
+    if (result.confidence.odometer !== 'none' && result.odometer != null) {
+      setOdometer(String(kmToMi(result.odometer)))
+      setOdometerConf(result.confidence.odometer)
+    }
+    if (result.confidence.volume !== 'none' && result.volume != null) {
+      setGallons(String(lToGal(result.volume)))
+      setGallonsConf(result.confidence.volume)
+    }
+    if (result.confidence.total_cost !== 'none' && result.total_cost != null) {
+      setCost(String(result.total_cost))
+      setCostConf(result.confidence.total_cost)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -64,9 +125,10 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     if (activeTab === 'fuel') {
       const fuelData = {
         ...commonData,
-        odometer: parseInt(odometer),
-        liters: parseFloat(liters),
-        total_cost: parseFloat(cost)
+        odometer: Math.round(miToKm(parseFloat(odometer))),
+        volume: galToL(parseFloat(gallons)),
+        total_cost: parseFloat(cost),
+        unit_system: 'metric',
       }
       if (isEditing) {
         const { error: err } = await supabase.from('refuelings').update(fuelData).eq('id', editingRecord.id)
@@ -78,7 +140,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     } else if (activeTab === 'service') {
       const serviceData = {
         ...commonData,
-        odometer: parseInt(odometer),
+        odometer: Math.round(miToKm(parseFloat(odometer))),
         description,
         total_cost: parseFloat(cost)
       }
@@ -147,7 +209,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
             <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
               <div className="sm:flex sm:items-start">
                 <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
-                  
+
                   {/* Top Header Actions */}
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-bold leading-6 text-gray-900" id="modal-title">
@@ -186,7 +248,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Tabs - Disabled when editing */}
                   <div className="mb-6 border-b border-gray-200">
                     <nav className="-mb-px flex space-x-8" aria-label="Tabs">
@@ -198,8 +260,8 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                           onClick={() => setActiveTab(tab)}
                           className={`
                             whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium capitalize transition-all
-                            ${activeTab === tab 
-                              ? 'border-indigo-500 text-indigo-600' 
+                            ${activeTab === tab
+                              ? 'border-indigo-500 text-indigo-600'
                               : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}
                             ${editingRecord ? 'cursor-not-allowed opacity-50' : ''}
                           `}
@@ -241,35 +303,60 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
 
                     {activeTab === 'fuel' && (
                       <>
+                        {!editingRecord && (
+                          <PhotoDropZone onExtracted={handleExtracted} />
+                        )}
+
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">Odometer (km)</label>
+                          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                            Odometer (mi)
+                            {odometerConf === 'low' && (
+                              <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                ⚠ Verify
+                              </span>
+                            )}
+                          </label>
                           <input
                             type="number"
                             value={odometer}
-                            onChange={(e) => setOdometer(e.target.value)}
+                            onChange={(e) => { setOdometer(e.target.value); setOdometerConf(null) }}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                             required
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Liters</label>
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                              Gallons
+                              {gallonsConf === 'low' && (
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ Verify
+                                </span>
+                              )}
+                            </label>
                             <input
                               type="number"
-                              step="0.01"
-                              value={liters}
-                              onChange={(e) => setLiters(e.target.value)}
+                              step="0.001"
+                              value={gallons}
+                              onChange={(e) => { setGallons(e.target.value); setGallonsConf(null) }}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                               required
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Total Cost</label>
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                              Total Cost
+                              {costConf === 'low' && (
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ Verify
+                                </span>
+                              )}
+                            </label>
                             <input
                               type="number"
                               step="0.01"
                               value={cost}
-                              onChange={(e) => setCost(e.target.value)}
+                              onChange={(e) => { setCost(e.target.value); setCostConf(null) }}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                               required
                             />
@@ -281,7 +368,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                     {activeTab === 'service' && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">Odometer (km)</label>
+                          <label className="block text-sm font-medium text-gray-700">Odometer (mi)</label>
                           <input
                             type="number"
                             value={odometer}
