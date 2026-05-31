@@ -9,12 +9,12 @@ const corsHeaders = {
 type Confidence = 'high' | 'low' | 'none'
 
 interface ScanResult {
-  odometer?: number
-  liters?: number
+  odometer?: number  // km (metric-normalised)
+  volume?: number    // liters (metric-normalised)
   total_cost?: number
   confidence: {
     odometer: Confidence
-    liters: Confidence
+    volume: Confidence
     total_cost: Confidence
   }
 }
@@ -44,84 +44,42 @@ export function toImageSource(dataUri: string): Anthropic.Base64ImageSource | nu
   }
 }
 
-async function extractOdometer(
-  client: Anthropic,
-  imageDataUri: string,
-): Promise<{ value?: number; confidence: Confidence }> {
-  const source = toImageSource(imageDataUri)
-  if (!source) return { confidence: 'none' }
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 128,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source },
-          {
-            type: 'text',
-            text: `Extract the odometer reading from this image.
-Rules:
-- Return the numeric value only (integer, no units, no commas).
-- confidence "high": digits are clear and unambiguous.
-- confidence "low": digits are partially visible, blurry, or estimated.
-- confidence "none": odometer not visible or unreadable.
-Respond ONLY with valid JSON, no markdown, no explanation:
-{"value": 123456, "confidence": "high"}`,
-          },
-        ],
-      },
-    ],
-  })
-
-  try {
-    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
-    const parsed = JSON.parse(text)
-    const confidence: Confidence = ['high', 'low', 'none'].includes(parsed.confidence)
-      ? parsed.confidence
-      : 'none'
-    const value = typeof parsed.value === 'number' ? Math.round(parsed.value) : undefined
-    return { value, confidence }
-  } catch {
-    return { confidence: 'none' }
+async function extractAll(client: Anthropic, imageDataUris: string[]): Promise<ScanResult> {
+  const fallback: ScanResult = {
+    confidence: { odometer: 'none', volume: 'none', total_cost: 'none' },
   }
-}
 
-async function extractReceipt(
-  client: Anthropic,
-  imageDataUri: string,
-): Promise<{
-  liters?: number
-  total_cost?: number
-  litersConfidence: Confidence
-  totalCostConfidence: Confidence
-}> {
-  const source = toImageSource(imageDataUri)
-  if (!source) return { litersConfidence: 'none', totalCostConfidence: 'none' }
+  const imageBlocks: Anthropic.MessageParam['content'] = imageDataUris
+    .map((uri) => {
+      const source = toImageSource(uri)
+      if (!source) return null
+      return { type: 'image' as const, source }
+    })
+    .filter((b): b is { type: 'image'; source: Anthropic.Base64ImageSource } => b !== null)
+
+  if (imageBlocks.length === 0) return fallback
+
+  const prompt = `You are analysing photos taken at a fuel stop. You may have 1–5 images.
+Each image may show an odometer, a fuel pump display, a paper receipt, or something else.
+
+Extract from ALL images combined and normalize to metric units:
+- odometer: integer km reading. If the reading is in miles, multiply by 1.609344 and round to the nearest integer.
+- volume: decimal liters dispensed. If the reading is in gallons, multiply by 3.785411.
+- total_cost: decimal total amount paid in USD (not the per-unit price).
+
+Respond ONLY with valid JSON, no markdown, no explanation:
+{"odometer":54321,"volume":42.5,"total_cost":68.40,"confidence":{"odometer":"high","volume":"high","total_cost":"low"}}
+
+"high" = clearly readable, "low" = uncertain/inferred, "none" = not found.
+Use null for numeric value when confidence is "none".`
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 128,
+    max_tokens: 192,
     messages: [
       {
         role: 'user',
-        content: [
-          { type: 'image', source },
-          {
-            type: 'text',
-            text: `Extract fuel volume and total cost from this pump display or receipt.
-Rules:
-- Return numeric values only (no units, no currency symbols).
-- If the receipt shows gallons, convert to liters (1 gallon = 3.785 liters).
-- total_cost is the total amount paid, not the per-litre price.
-- confidence "high": value is clearly legible and unambiguous.
-- confidence "low": value is partially visible, blurry, or estimated.
-- confidence "none": value not present or unreadable.
-Respond ONLY with valid JSON, no markdown, no explanation:
-{"liters": 45.2, "liters_confidence": "high", "total_cost": 89.50, "total_cost_confidence": "high"}`,
-          },
-        ],
+        content: [...imageBlocks, { type: 'text', text: prompt }],
       },
     ],
   })
@@ -129,24 +87,26 @@ Respond ONLY with valid JSON, no markdown, no explanation:
   try {
     const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
     const parsed = JSON.parse(text)
+    const conf = parsed.confidence ?? {}
 
-    const litersConf: Confidence = ['high', 'low', 'none'].includes(parsed.liters_confidence)
-      ? parsed.liters_confidence
-      : 'none'
-    const totalCostConf: Confidence = ['high', 'low', 'none'].includes(
-      parsed.total_cost_confidence,
-    )
-      ? parsed.total_cost_confidence
-      : 'none'
+    const toConf = (v: unknown): Confidence =>
+      ['high', 'low', 'none'].includes(v as string) ? (v as Confidence) : 'none'
 
-    return {
-      liters: typeof parsed.liters === 'number' ? parsed.liters : undefined,
-      total_cost: typeof parsed.total_cost === 'number' ? parsed.total_cost : undefined,
-      litersConfidence: litersConf,
-      totalCostConfidence: totalCostConf,
+    const result: ScanResult = {
+      confidence: {
+        odometer: toConf(conf.odometer),
+        volume: toConf(conf.volume),
+        total_cost: toConf(conf.total_cost),
+      },
     }
+
+    if (typeof parsed.odometer === 'number') result.odometer = Math.round(parsed.odometer)
+    if (typeof parsed.volume === 'number') result.volume = parsed.volume
+    if (typeof parsed.total_cost === 'number') result.total_cost = parsed.total_cost
+
+    return result
   } catch {
-    return { litersConfidence: 'none', totalCostConfidence: 'none' }
+    return fallback
   }
 }
 
@@ -159,7 +119,6 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'Method not allowed' }, 405)
   }
 
-  // Validate user JWT
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return jsonResponse({ error: 'Unauthorized' }, 401)
@@ -169,30 +128,23 @@ Deno.serve(async (req: Request) => {
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
   const authCheck = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      Authorization: authHeader,
-      apikey: supabaseAnonKey,
-    },
+    headers: { Authorization: authHeader, apikey: supabaseAnonKey },
   })
 
   if (!authCheck.ok) {
     return jsonResponse({ error: 'Unauthorized' }, 401)
   }
 
-  // Parse body
-  let odometerImage: string | undefined
-  let receiptImage: string | undefined
+  let images: string[]
 
   try {
     const body = await req.json()
-    odometerImage = typeof body.odometerImage === 'string' ? body.odometerImage : undefined
-    receiptImage = typeof body.receiptImage === 'string' ? body.receiptImage : undefined
+    if (!Array.isArray(body.images) || body.images.length === 0) {
+      return jsonResponse({ error: 'At least one image is required' }, 400)
+    }
+    images = body.images.filter((i: unknown) => typeof i === 'string')
   } catch {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
-  }
-
-  if (!odometerImage && !receiptImage) {
-    return jsonResponse({ error: 'At least one image is required' }, 400)
   }
 
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY')
@@ -201,27 +153,6 @@ Deno.serve(async (req: Request) => {
   }
 
   const client = new Anthropic({ apiKey: anthropicApiKey })
-
-  const result: ScanResult = {
-    confidence: { odometer: 'none', liters: 'none', total_cost: 'none' },
-  }
-
-  if (odometerImage) {
-    const { value, confidence } = await extractOdometer(client, odometerImage)
-    if (value !== undefined) result.odometer = value
-    result.confidence.odometer = confidence
-  }
-
-  if (receiptImage) {
-    const { liters, total_cost, litersConfidence, totalCostConfidence } = await extractReceipt(
-      client,
-      receiptImage,
-    )
-    if (liters !== undefined) result.liters = liters
-    if (total_cost !== undefined) result.total_cost = total_cost
-    result.confidence.liters = litersConfidence
-    result.confidence.total_cost = totalCostConfidence
-  }
-
+  const result = await extractAll(client, images)
   return jsonResponse(result)
 })

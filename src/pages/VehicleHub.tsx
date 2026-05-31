@@ -90,7 +90,7 @@ export default function VehicleHub() {
         type: entry.activity_type,
         date: data.date,
         odometer: data.odometer,
-        liters: data.liters,
+        volume: data.volume,
         total_cost: data.total_cost,
         amount: data.amount,
         description: data.description,
