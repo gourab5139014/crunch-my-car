@@ -26,13 +26,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function parseDataUri(dataUri: string): { mediaType: string; base64Data: string } | null {
+export function parseDataUri(dataUri: string): { mediaType: string; base64Data: string } | null {
   const match = dataUri.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return null
   return { mediaType: match[1], base64Data: match[2] }
 }
 
-function toImageSource(dataUri: string): Anthropic.Base64ImageSource | null {
+export function toImageSource(dataUri: string): Anthropic.Base64ImageSource | null {
   const parsed = parseDataUri(dataUri)
   if (!parsed) return null
   const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
