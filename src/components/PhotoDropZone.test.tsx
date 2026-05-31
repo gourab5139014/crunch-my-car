@@ -278,7 +278,7 @@ describe('error state', () => {
     await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument())
-    expect(screen.getByText(/Retry/i)).toBeInTheDocument()
+    expect(screen.getByText(/Start again/i)).toBeInTheDocument()
   })
 
   it('shows error when invoke returns null data', async () => {
@@ -309,8 +309,8 @@ describe('re-scan', () => {
     renderZone()
     await stageAndScan([fakeJpeg])
 
-    await waitFor(() => expect(screen.getByText(/Retry/i)).toBeInTheDocument())
-    fireEvent.click(screen.getByText(/Retry/i))
+    await waitFor(() => expect(screen.getByText(/Start again/i)).toBeInTheDocument())
+    fireEvent.click(screen.getByText(/Start again/i))
 
     expect(screen.getByText(/Drop photos here or click to browse/i)).toBeInTheDocument()
   })

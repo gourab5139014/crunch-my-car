@@ -399,7 +399,7 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
           </p>
         </div>
         <button type="button" onClick={reset} className="shrink-0 text-xs text-red-600 underline hover:text-red-800">
-          Retry
+          Start again
         </button>
       </div>
     </div>

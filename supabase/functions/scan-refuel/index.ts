@@ -78,11 +78,29 @@ function nearestNeighborResize(
   return { data: dst, width: dstW, height: dstH }
 }
 
+// Decode base64 to bytes without building an intermediate string array.
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+// Encode bytes to base64 in chunks to avoid stack overflow on large arrays.
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const CHUNK = 8192
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
 async function convertHeicToJpegDataUri(heicDataUri: string): Promise<string> {
   const parsed = parseDataUri(heicDataUri)
   if (!parsed) throw new Error('Invalid HEIC data URI')
 
-  const bytes = Uint8Array.from(atob(parsed.base64Data), (c) => c.charCodeAt(0))
+  const bytes = base64ToBytes(parsed.base64Data)
 
   // deno-lint-ignore no-explicit-any
   const libheif: any = await libheifReady
@@ -107,27 +125,30 @@ async function convertHeicToJpegDataUri(heicDataUri: string): Promise<string> {
 
   const { data: jpegBytes } = jpegJs.encode({ data: resized, width: w, height: h }, 85)
 
-  let binary = ''
-  new Uint8Array(jpegBytes).forEach((b: number) => { binary += String.fromCharCode(b) })
-  return `data:image/jpeg;base64,${btoa(binary)}`
+  return `data:image/jpeg;base64,${bytesToBase64(new Uint8Array(jpegBytes))}`
 }
 
 function isHeicDataUri(uri: string): boolean {
   return /^data:image\/hei[cf];base64,/i.test(uri)
 }
 
+// Process HEIC images one at a time — parallel decoding would hold multiple
+// large RGBA buffers (~48 MB each) in WASM memory simultaneously.
 async function prepareImages(rawUris: string[]): Promise<string[]> {
-  return Promise.all(
-    rawUris.map(async (uri) => {
-      if (!isHeicDataUri(uri)) return uri
-      try {
-        return await convertHeicToJpegDataUri(uri)
-      } catch (e) {
-        console.error('[scan-refuel] HEIC conversion failed:', e)
-        return uri  // pass through; toImageSource will filter it out
-      }
-    }),
-  )
+  const result: string[] = []
+  for (const uri of rawUris) {
+    if (!isHeicDataUri(uri)) {
+      result.push(uri)
+      continue
+    }
+    try {
+      result.push(await convertHeicToJpegDataUri(uri))
+    } catch (e) {
+      console.error('[scan-refuel] HEIC conversion failed:', e)
+      result.push(uri)  // pass through; toImageSource will filter it out
+    }
+  }
+  return result
 }
 
 async function extractAll(client: Anthropic, imageDataUris: string[]): Promise<ScanResult> {
