@@ -22,10 +22,18 @@ function renderZone(onExtracted = vi.fn()) {
   return render(<PhotoDropZone onExtracted={onExtracted} />)
 }
 
-function dropFiles(container: Element, files: File[]) {
-  const zone = container.firstChild as HTMLElement
-  fireEvent.dragEnter(zone, { dataTransfer: { files } })
-  fireEvent.drop(zone, { dataTransfer: { files } })
+function getFileInput() {
+  return document.querySelector('input[type="file"]') as HTMLInputElement
+}
+
+function stageFiles(files: File[]) {
+  fireEvent.change(getFileInput(), { target: { files } })
+}
+
+async function stageAndScan(files: File[]) {
+  stageFiles(files)
+  await waitFor(() => expect(screen.getByText('Read with AI')).toBeInTheDocument())
+  fireEvent.click(screen.getByText('Read with AI'))
 }
 
 // Metric mock values (what the edge function returns)
@@ -61,11 +69,11 @@ describe('idle state', () => {
 // ── Drag state ────────────────────────────────────────────────────────────────
 
 describe('drag state', () => {
-  it('shows release-to-analyse on dragenter', () => {
+  it('shows release-to-add on dragenter', () => {
     const { container } = renderZone()
     const zone = container.firstChild as HTMLElement
     fireEvent.dragEnter(zone, { dataTransfer: { files: [fakeJpeg] } })
-    expect(screen.getByText(/Release to analyse/i)).toBeInTheDocument()
+    expect(screen.getByText(/Release to add photos/i)).toBeInTheDocument()
   })
 
   it('reverts to idle on dragleave when counter reaches zero', () => {
@@ -77,42 +85,89 @@ describe('drag state', () => {
   })
 })
 
-// ── File validation ───────────────────────────────────────────────────────────
+// ── Collecting state ──────────────────────────────────────────────────────────
 
-describe('file validation', () => {
-  it('shows error when only non-image files are dropped', async () => {
+describe('collecting state', () => {
+  it('shows thumbnails and Read with AI button after selecting a file', () => {
     renderZone()
-    // Use the file input directly for non-image
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakePdf] } })
+    stageFiles([fakeJpeg])
+    expect(screen.getByText('Read with AI')).toBeInTheDocument()
+    expect(screen.getByText('Clear all')).toBeInTheDocument()
+  })
 
+  it('shows add-more button when below the 5-photo limit', () => {
+    renderZone()
+    stageFiles([fakeJpeg])
+    expect(screen.getByLabelText('Add more photos')).toBeInTheDocument()
+  })
+
+  it('hides add-more button when 5 photos are staged', () => {
+    renderZone()
+    const files = Array.from({ length: 5 }, (_, i) =>
+      new File(['x'], `photo${i}.jpg`, { type: 'image/jpeg' }),
+    )
+    stageFiles(files)
+    expect(screen.queryByLabelText('Add more photos')).not.toBeInTheDocument()
+  })
+
+  it('removes a photo when its × button is clicked', async () => {
+    renderZone()
+    const twoFiles = [
+      new File(['x'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['x'], 'b.jpg', { type: 'image/jpeg' }),
+    ]
+    stageFiles(twoFiles)
+    const removeButtons = screen.getAllByLabelText('Remove photo')
+    expect(removeButtons).toHaveLength(2)
+    fireEvent.click(removeButtons[0])
     await waitFor(() =>
-      expect(screen.getByText(/Please upload image files/i)).toBeInTheDocument(),
+      expect(screen.getAllByLabelText('Remove photo')).toHaveLength(1),
     )
   })
 
-  it('accepts a HEIC file by extension', async () => {
-    mockInvoke.mockResolvedValueOnce(highConfResult)
+  it('returns to idle when last photo is removed', async () => {
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeHeic] } })
+    stageFiles([fakeJpeg])
+    fireEvent.click(screen.getByLabelText('Remove photo'))
+    await waitFor(() =>
+      expect(screen.getByText(/Drop photos here/i)).toBeInTheDocument(),
+    )
+  })
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledOnce())
+  it('returns to idle when Clear all is clicked', () => {
+    renderZone()
+    stageFiles([fakeJpeg])
+    fireEvent.click(screen.getByText('Clear all'))
+    expect(screen.getByText(/Drop photos here/i)).toBeInTheDocument()
+  })
+
+  it('accepts a HEIC file by extension', () => {
+    renderZone()
+    stageFiles([fakeHeic])
+    expect(screen.getByText('Read with AI')).toBeInTheDocument()
+  })
+
+  it('silently ignores non-image files (stays idle)', () => {
+    renderZone()
+    stageFiles([fakePdf])
+    expect(screen.getByText(/Drop photos here/i)).toBeInTheDocument()
   })
 })
 
 // ── Processing state ──────────────────────────────────────────────────────────
 
 describe('processing state', () => {
-  it('shows spinner while invoke is pending', async () => {
+  it('shows spinner after clicking Read with AI', async () => {
     mockInvoke.mockImplementation(() => new Promise(() => {})) // never resolves
-    const { container } = renderZone()
-    dropFiles(container, [fakeJpeg])
+    renderZone()
+    stageFiles([fakeJpeg])
+    await waitFor(() => expect(screen.getByText('Read with AI')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Read with AI'))
 
     await waitFor(() =>
       expect(document.querySelector('.animate-spin')).toBeInTheDocument(),
     )
-    expect(screen.getByText(/Analysing with AI/i)).toBeInTheDocument()
+    expect(screen.getByText(/Reading with AI/i)).toBeInTheDocument()
   })
 })
 
@@ -124,8 +179,7 @@ describe('success — all 3 found', () => {
   it('shows green state with American unit summary', async () => {
     mockInvoke.mockResolvedValueOnce(highConfResult)
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText(/Re-scan/i)).toBeInTheDocument())
 
@@ -139,8 +193,7 @@ describe('success — all 3 found', () => {
     mockInvoke.mockResolvedValueOnce(highConfResult)
     const onExtracted = vi.fn()
     render(<PhotoDropZone onExtracted={onExtracted} />)
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(onExtracted).toHaveBeenCalledOnce())
     const arg = onExtracted.mock.calls[0][0]
@@ -152,14 +205,27 @@ describe('success — all 3 found', () => {
   it('sends images array in the request body', async () => {
     mockInvoke.mockResolvedValueOnce(highConfResult)
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledOnce())
     const [fnName, opts] = mockInvoke.mock.calls[0]
     expect(fnName).toBe('scan-refuel')
     expect(Array.isArray(opts.body.images)).toBe(true)
     expect(opts.body.images).toHaveLength(1)
+  })
+
+  it('sends all staged images when multiple files are queued', async () => {
+    mockInvoke.mockResolvedValueOnce(highConfResult)
+    renderZone()
+    const twoJpegs = [
+      new File(['x'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['x'], 'b.jpg', { type: 'image/jpeg' }),
+    ]
+    await stageAndScan(twoJpegs)
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledOnce())
+    const [, opts] = mockInvoke.mock.calls[0]
+    expect(opts.body.images).toHaveLength(2)
   })
 })
 
@@ -176,8 +242,7 @@ describe('success — partial (2 of 3)', () => {
       error: null,
     })
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText(/2 of 3 values found/i)).toBeInTheDocument())
     expect(screen.getByText(/Total cost not found/i)).toBeInTheDocument()
@@ -195,8 +260,7 @@ describe('success — nothing found', () => {
       error: null,
     })
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText(/No values found/i)).toBeInTheDocument())
     expect(screen.getByText(/Try again/i)).toBeInTheDocument()
@@ -211,8 +275,7 @@ describe('error state', () => {
   it('shows error when invoke returns an error', async () => {
     mockInvoke.mockResolvedValueOnce({ data: null, error: new Error('Network error') })
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument())
     expect(screen.getByText(/Retry/i)).toBeInTheDocument()
@@ -221,8 +284,7 @@ describe('error state', () => {
   it('shows error when invoke returns null data', async () => {
     mockInvoke.mockResolvedValueOnce({ data: null, error: null })
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeInTheDocument())
   })
@@ -234,8 +296,7 @@ describe('re-scan', () => {
   it('resets to idle when Re-scan is clicked', async () => {
     mockInvoke.mockResolvedValueOnce(highConfResult)
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText(/Re-scan/i)).toBeInTheDocument())
     fireEvent.click(screen.getByText(/Re-scan/i))
@@ -246,8 +307,7 @@ describe('re-scan', () => {
   it('resets to idle when Retry is clicked after error', async () => {
     mockInvoke.mockResolvedValueOnce({ data: null, error: new Error('fail') })
     renderZone()
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    fireEvent.change(input, { target: { files: [fakeJpeg] } })
+    await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(screen.getByText(/Retry/i)).toBeInTheDocument())
     fireEvent.click(screen.getByText(/Retry/i))
