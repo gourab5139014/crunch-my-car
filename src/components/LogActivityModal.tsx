@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import PhotoDropZone, { type ExtractionResult } from './PhotoDropZone'
 
@@ -60,6 +60,33 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
   const [odometerConf, setOdometerConf] = useState<ScanConfidence>(null)
   const [gallonsConf, setGallonsConf] = useState<ScanConfidence>(null)
   const [costConf, setCostConf] = useState<ScanConfidence>(null)
+
+  // Pre-fill if editing
+  useEffect(() => {
+    if (editingRecord) {
+      setActiveTab(editingRecord.type)
+      setDate(editingRecord.date)
+      setOdometer(editingRecord.odometer != null ? String(kmToMi(editingRecord.odometer)) : '')
+      setGallons(editingRecord.volume != null ? String(lToGal(editingRecord.volume)) : '')
+      setCost(editingRecord.total_cost?.toString() || '')
+      setAmount(editingRecord.amount?.toString() || '')
+      setDescription(editingRecord.description || '')
+      setCategory(editingRecord.category || 'General')
+    } else {
+      // Reset to defaults for "Add" mode
+      setActiveTab('fuel')
+      setDate(new Date().toISOString().split('T')[0])
+      setOdometer('')
+      setGallons('')
+      setCost('')
+      setAmount('')
+      setDescription('')
+      setCategory('General')
+    }
+    setOdometerConf(null)
+    setGallonsConf(null)
+    setCostConf(null)
+  }, [editingRecord, isOpen])
 
   if (!isOpen) return null
 
