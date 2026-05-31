@@ -51,17 +51,6 @@ async function imgToJpeg(blob: Blob): Promise<string> {
   })
 }
 
-// Read raw file bytes as a data URI — used for HEIC so the edge function can
-// decode it server-side with libheif (Claude's API only accepts JPEG/PNG/GIF/WebP).
-async function fileToRawDataUri(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(new Blob([file], { type: 'image/heic' }))
-  })
-}
-
 function isHeicFile(file: File): boolean {
   return (
     file.type === 'image/heic' ||
@@ -70,9 +59,60 @@ function isHeicFile(file: File): boolean {
   )
 }
 
+// Cache the initialized libheif module — WASM initialises only once per page load.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let libheifCache: any = null
+
+// deno-lint-ignore no-explicit-any
+async function getLibheif(): Promise<any> {
+  if (!libheifCache) {
+    // Dynamic import keeps the 1.4 MB WASM bundle out of the main chunk.
+    // The .mjs variant is the pre-built ESM browser bundle.
+    const { default: factory } = await import(
+      /* @vite-chunk-include */ 'libheif-js/libheif-wasm/libheif-bundle.mjs'
+    )
+    libheifCache = await factory()
+  }
+  return libheifCache
+}
+
+async function heicToJpegDataUri(file: File): Promise<string> {
+  const libheif = await getLibheif()
+
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const decoder = new libheif.HeifDecoder()
+  const images = decoder.decode(bytes)
+  if (!images?.length) throw new Error('No images found in HEIC file')
+
+  const image = images[0]
+  const width: number = image.get_width()
+  const height: number = image.get_height()
+
+  // Decode HEIC pixels into an ImageData, then draw via Canvas for JPEG output.
+  const srcCanvas = document.createElement('canvas')
+  srcCanvas.width = width
+  srcCanvas.height = height
+  const ctx = srcCanvas.getContext('2d')!
+  const imageData = ctx.createImageData(width, height)
+
+  await new Promise<void>((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    image.display(imageData, (result: any) => {
+      if (result) resolve()
+      else reject(new Error('libheif display failed'))
+    })
+  })
+
+  ctx.putImageData(imageData, 0, 0)
+
+  // Scale and encode as JPEG using the browser's Canvas API.
+  return drawScaled(srcCanvas, width, height)
+}
+
 async function toSendableDataUri(file: File): Promise<string> {
   if (isHeicFile(file)) {
-    return fileToRawDataUri(file)
+    // Decode HEIC client-side — the edge function only accepts JPEG/PNG/GIF/WebP.
+    return heicToJpegDataUri(file)
   }
   const blob = file.type !== '' ? file : new Blob([file], { type: 'image/jpeg' })
   return imgToJpeg(blob)
@@ -125,7 +165,7 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
 
   async function handleScan() {
     setStatus('processing')
-    const snapshot = staged  // capture before clearing
+    const snapshot = staged
 
     try {
       const dataUris = await Promise.all(snapshot.map((p) => toSendableDataUri(p.file)))
@@ -283,7 +323,6 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
             </div>
           ))}
 
-          {/* Add more button */}
           {staged.length < MAX_PHOTOS && (
             <button
               type="button"
@@ -301,11 +340,7 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-1">
-          <button
-            type="button"
-            onClick={reset}
-            className="text-xs text-gray-400 hover:text-gray-600"
-          >
+          <button type="button" onClick={reset} className="text-xs text-gray-400 hover:text-gray-600">
             Clear all
           </button>
           <button
@@ -347,9 +382,7 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-semibold text-red-700">No values found</p>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Try a clearer photo or fill in the fields manually.
-              </p>
+              <p className="mt-0.5 text-xs text-gray-500">Try a clearer photo or fill in the fields manually.</p>
             </div>
             <button type="button" onClick={reset} className="shrink-0 text-xs text-red-600 underline hover:text-red-800">
               Try again

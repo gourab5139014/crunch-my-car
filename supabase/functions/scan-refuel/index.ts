@@ -1,7 +1,4 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@0.36.3'
-// deno-lint-ignore no-explicit-any
-import libheifModule from 'npm:libheif-js/wasm-bundle.js'
-import jpegJs from 'npm:jpeg-js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,110 +44,6 @@ export function toImageSource(dataUri: string): Anthropic.Base64ImageSource | nu
   }
 }
 
-// libheif-js/wasm-bundle exports a Promise<Module> (emscripten async init).
-// Cache it at the module level so the WASM is only loaded once per isolate.
-// deno-lint-ignore no-explicit-any
-const libheifReady: Promise<any> = Promise.resolve(libheifModule)
-
-function nearestNeighborResize(
-  src: Uint8ClampedArray,
-  srcW: number,
-  srcH: number,
-  maxPx: number,
-): { data: Uint8ClampedArray; width: number; height: number } {
-  const scale = Math.min(1, maxPx / Math.max(srcW, srcH))
-  if (scale === 1) return { data: src, width: srcW, height: srcH }
-  const dstW = Math.round(srcW * scale)
-  const dstH = Math.round(srcH * scale)
-  const dst = new Uint8ClampedArray(dstW * dstH * 4)
-  for (let dy = 0; dy < dstH; dy++) {
-    for (let dx = 0; dx < dstW; dx++) {
-      const sx = Math.min(Math.floor(dx / scale), srcW - 1)
-      const sy = Math.min(Math.floor(dy / scale), srcH - 1)
-      const si = (sy * srcW + sx) * 4
-      const di = (dy * dstW + dx) * 4
-      dst[di] = src[si]
-      dst[di + 1] = src[si + 1]
-      dst[di + 2] = src[si + 2]
-      dst[di + 3] = src[si + 3]
-    }
-  }
-  return { data: dst, width: dstW, height: dstH }
-}
-
-// Decode base64 to bytes without building an intermediate string array.
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes
-}
-
-// Encode bytes to base64 in chunks to avoid stack overflow on large arrays.
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const CHUNK = 8192
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
-}
-
-async function convertHeicToJpegDataUri(heicDataUri: string): Promise<string> {
-  const parsed = parseDataUri(heicDataUri)
-  if (!parsed) throw new Error('Invalid HEIC data URI')
-
-  const bytes = base64ToBytes(parsed.base64Data)
-
-  // deno-lint-ignore no-explicit-any
-  const libheif: any = await libheifReady
-  const decoder = new libheif.HeifDecoder()
-  const images = decoder.decode(bytes)
-  if (!images?.length) throw new Error('No images decoded from HEIC')
-
-  const image = images[0]
-  const width: number = image.get_width()
-  const height: number = image.get_height()
-
-  const rgbaData = new Uint8ClampedArray(width * height * 4)
-  await new Promise<void>((resolve, reject) => {
-    // deno-lint-ignore no-explicit-any
-    image.display({ data: rgbaData, width, height }, (result: any) => {
-      if (result) resolve()
-      else reject(new Error('HEIC display callback failed'))
-    })
-  })
-
-  const { data: resized, width: w, height: h } = nearestNeighborResize(rgbaData, width, height, 1024)
-
-  const { data: jpegBytes } = jpegJs.encode({ data: resized, width: w, height: h }, 85)
-
-  return `data:image/jpeg;base64,${bytesToBase64(new Uint8Array(jpegBytes))}`
-}
-
-function isHeicDataUri(uri: string): boolean {
-  return /^data:image\/hei[cf];base64,/i.test(uri)
-}
-
-// Process HEIC images one at a time — parallel decoding would hold multiple
-// large RGBA buffers (~48 MB each) in WASM memory simultaneously.
-async function prepareImages(rawUris: string[]): Promise<string[]> {
-  const result: string[] = []
-  for (const uri of rawUris) {
-    if (!isHeicDataUri(uri)) {
-      result.push(uri)
-      continue
-    }
-    try {
-      result.push(await convertHeicToJpegDataUri(uri))
-    } catch (e) {
-      console.error('[scan-refuel] HEIC conversion failed:', e)
-      result.push(uri)  // pass through; toImageSource will filter it out
-    }
-  }
-  return result
-}
-
 async function extractAll(client: Anthropic, imageDataUris: string[]): Promise<ScanResult> {
   const fallback: ScanResult = {
     confidence: { odometer: 'none', volume: 'none', total_cost: 'none' },
@@ -193,7 +86,7 @@ Use null for numeric value when confidence is "none".`
     })
 
     const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
-    // Strip optional markdown code fence that Claude sometimes adds despite instructions
+    // Strip optional markdown code fence that Claude sometimes adds
     const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
     const parsed = JSON.parse(text)
     const conf = parsed.confidence ?? {}
@@ -245,14 +138,14 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'Unauthorized' }, 401)
   }
 
-  let rawImages: string[]
+  let images: string[]
 
   try {
     const body = await req.json()
     if (!Array.isArray(body.images) || body.images.length === 0) {
       return jsonResponse({ error: 'At least one image is required' }, 400)
     }
-    rawImages = body.images.filter((i: unknown) => typeof i === 'string')
+    images = body.images.filter((i: unknown) => typeof i === 'string')
   } catch {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
   }
@@ -263,10 +156,6 @@ Deno.serve(async (req: Request) => {
   }
 
   const client = new Anthropic({ apiKey: anthropicApiKey })
-
-  // Convert any HEIC/HEIF images to JPEG before passing to Claude.
-  const images = await prepareImages(rawImages)
-
   const result = await extractAll(client, images)
   return jsonResponse(result)
 })

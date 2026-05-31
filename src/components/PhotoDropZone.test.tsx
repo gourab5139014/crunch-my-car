@@ -2,6 +2,22 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import PhotoDropZone from './PhotoDropZone'
 
+// ── libheif mock (browser-side HEIC conversion) ───────────────────────────────
+
+vi.mock('libheif-js/libheif-wasm/libheif-bundle.mjs', () => ({
+  default: vi.fn().mockResolvedValue({
+    HeifDecoder: class {
+      decode() {
+        return [{
+          get_width: () => 100,
+          get_height: () => 100,
+          display(imageData: unknown, cb: (result: unknown) => void) { cb(imageData) },
+        }]
+      }
+    },
+  }),
+}))
+
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 
 const mockInvoke = vi.hoisted(() => vi.fn())

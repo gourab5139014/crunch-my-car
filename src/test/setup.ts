@@ -4,6 +4,12 @@ import { vi } from 'vitest'
 // Canvas mock
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   drawImage: vi.fn(),
+  putImageData: vi.fn(),
+  createImageData: vi.fn().mockImplementation((w: number, h: number) => ({
+    data: new Uint8ClampedArray(w * h * 4),
+    width: w,
+    height: h,
+  })),
 })
 HTMLCanvasElement.prototype.toDataURL = vi
   .fn()
