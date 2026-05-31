@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import LogActivityModal from '../components/LogActivityModal'
+import { UnitSystem } from '../components/VehicleAnalytics'
 
 interface Car {
   id: string
   name: string
+  unit_preference: UnitSystem
+  avg_efficiency?: number | null
 }
 
 export default function Dashboard() {
@@ -14,21 +17,38 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   async function fetchCars() {
-    const { data, error } = await supabase
+    // Fetch cars and their basic stats via a join or multiple calls
+    // For the dashboard, we'll call the rpc per car for now (fine for small fleet)
+    const { data: carsData, error } = await supabase
       .from('cars')
-      .select('id, name')
+      .select('id, name, unit_preference')
       .order('created_at', { ascending: false })
 
     if (error) {
       console.error('Error fetching cars:', error)
-    } else {
-      setCars(data || [])
+      setLoading(false)
+      return
+    }
+
+    if (carsData) {
+      const carIds = carsData.map(c => c.id)
+      const { data: statsData } = await supabase.rpc('get_fleet_stats', { p_car_ids: carIds })
+      
+      const statsMap = (statsData as any[])?.reduce((acc, item) => {
+        acc[item.car_id] = item.stats
+        return acc
+      }, {} as Record<string, any>) || {}
+
+      const carsWithStats = carsData.map((car) => ({
+        ...car,
+        avg_efficiency: statsMap[car.id]?.fuel_efficiency ?? null
+      }))
+      setCars(carsWithStats)
     }
     setLoading(false)
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCars()
   }, [])
 
@@ -92,26 +112,40 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {cars.map((car) => (
-            <Link
-              key={car.id}
-              to={`/cars/${car.id}`}
-              className="relative flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm hover:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:shadow-md transition-all"
-            >
-              <div className="flex-shrink-0">
-                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700">
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+          {cars.map((car) => {
+            const isMetric = car.unit_preference === 'metric'
+            const efficiency = car.avg_efficiency 
+              ? (isMetric ? car.avg_efficiency : car.avg_efficiency * 2.352).toFixed(1)
+              : null
+            const unit = isMetric ? 'km/L' : 'MPG'
+
+            return (
+              <Link
+                key={car.id}
+                to={`/cars/${car.id}`}
+                className="relative flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm hover:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:shadow-md transition-all"
+              >
+                <div className="flex-shrink-0">
+                  <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
                 </div>
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="absolute inset-0" aria-hidden="true" />
-                <p className="text-sm font-medium text-gray-900">{car.name}</p>
-                <p className="truncate text-sm text-gray-500">View details & log data</p>
-              </div>
-            </Link>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-gray-900">{car.name}</p>
+                    {efficiency && (
+                      <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                        {efficiency} {unit}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate text-sm text-gray-500 mt-1">View details & analytics</p>
+                </div>
+              </Link>
+            )
+          })}
         </div>
       )}
 
@@ -132,7 +166,7 @@ export default function Dashboard() {
         onClose={() => setIsModalOpen(false)}
         cars={cars}
         onSuccess={() => {
-          // Future: Fetch timeline data
+          fetchCars()
           alert('Activity logged successfully!')
         }}
       />
