@@ -19,42 +19,60 @@ interface PhotoDropZoneProps {
 function toMi(km: number) { return Math.round(km / 1.609344).toLocaleString() }
 function toGal(l: number) { return (l / 3.785411).toFixed(2) }
 
-async function resizeToJpegDataUri(file: File): Promise<string> {
+function canvasToJpeg(canvas: HTMLCanvasElement): string {
+  return canvas.toDataURL('image/jpeg', 0.85)
+}
+
+function drawScaled(source: CanvasImageSource, w: number, h: number): string {
+  const MAX = 1024
+  const scale = Math.min(1, MAX / Math.max(w, h))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(w * scale)
+  canvas.height = Math.round(h * scale)
+  canvas.getContext('2d')!.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvasToJpeg(canvas)
+}
+
+async function imgToJpeg(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    const objectUrl = URL.createObjectURL(file)
+    const url = URL.createObjectURL(blob)
     img.onload = () => {
-      URL.revokeObjectURL(objectUrl)
-      const MAX = 1024
-      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.round(img.width * scale)
-      canvas.height = Math.round(img.height * scale)
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      resolve(canvas.toDataURL('image/jpeg', 0.85))
+      URL.revokeObjectURL(url)
+      resolve(drawScaled(img, img.naturalWidth, img.naturalHeight))
     }
-    img.onerror = reject
-    img.src = objectUrl
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img decode failed')) }
+    img.src = url
   })
 }
 
-async function toJpegDataUri(file: File): Promise<string> {
-  const isHeic =
+// Read raw file bytes as a data URI — used for HEIC so the edge function can
+// decode it server-side with libheif (Claude's API only accepts JPEG/PNG/GIF/WebP).
+async function fileToRawDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    // Ensure the blob carries an explicit MIME type so the data URI prefix is correct.
+    reader.readAsDataURL(new Blob([file], { type: 'image/heic' }))
+  })
+}
+
+function isHeicFile(file: File): boolean {
+  return (
     file.type === 'image/heic' ||
     file.type === 'image/heif' ||
     /\.(heic|heif)$/i.test(file.name)
+  )
+}
 
-  if (isHeic) {
-    const heic2any = (await import('heic2any')).default
-    const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 })
-    const blob = Array.isArray(result) ? result[0] : result
-    const converted = new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), {
-      type: 'image/jpeg',
-    })
-    return resizeToJpegDataUri(converted)
+async function toSendableDataUri(file: File): Promise<string> {
+  if (isHeicFile(file)) {
+    // Pass raw HEIC bytes to the edge function — no client-side decode needed.
+    return fileToRawDataUri(file)
   }
-
-  return resizeToJpegDataUri(file)
+  const blob = file.type !== '' ? file : new Blob([file], { type: 'image/jpeg' })
+  return imgToJpeg(blob)
 }
 
 function isValidImageFile(file: File) {
@@ -94,12 +112,15 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
     setErrorMsg(null)
 
     try {
-      const dataUris = await Promise.all(valid.map(toJpegDataUri))
+      const dataUris = await Promise.all(valid.map(toSendableDataUri))
+      console.log('[PhotoDropZone] encoded', dataUris.length, 'image(s), invoking scan-refuel')
+
       const { data, error } = await supabase.functions.invoke('scan-refuel', {
         body: { images: dataUris },
       })
 
       objectUrls.forEach((u) => URL.revokeObjectURL(u))
+      console.log('[PhotoDropZone] invoke result:', { data, error })
 
       if (error || !data) {
         setErrorMsg('Something went wrong — please try again.')
@@ -110,7 +131,8 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
       setResult(data)
       setStatus('done')
       onExtracted(data)
-    } catch {
+    } catch (err) {
+      console.error('[PhotoDropZone] unexpected error:', err)
       objectUrls.forEach((u) => URL.revokeObjectURL(u))
       setErrorMsg('Something went wrong — please try again.')
       setStatus('error')

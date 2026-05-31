@@ -12,12 +12,6 @@ vi.mock('../lib/supabase', () => ({
   },
 }))
 
-// ── heic2any mock (dynamic import) ────────────────────────────────────────────
-
-vi.mock('heic2any', () => ({
-  default: vi.fn().mockResolvedValue(new Blob(['jpeg'], { type: 'image/jpeg' })),
-}))
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fakeJpeg = new File(['x'], 'photo.jpg', { type: 'image/jpeg' })

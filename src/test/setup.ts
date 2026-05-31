@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
-// Canvas mock — resizeAndEncode uses HTMLCanvasElement + Image
+// Canvas mock
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   drawImage: vi.fn(),
 })
@@ -12,7 +12,7 @@ HTMLCanvasElement.prototype.toDataURL = vi
 window.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-object-url')
 window.URL.revokeObjectURL = vi.fn()
 
-// Image mock — fires onload synchronously so resizeAndEncode resolves immediately
+// Image mock — fires onload synchronously
 class MockImage {
   onload: (() => void) | null = null
   onerror: ((e: unknown) => void) | null = null
@@ -23,3 +23,10 @@ class MockImage {
   }
 }
 vi.stubGlobal('Image', MockImage)
+
+// createImageBitmap mock — resolves immediately with a fake bitmap
+vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({
+  width: 800,
+  height: 600,
+  close: vi.fn(),
+}))
