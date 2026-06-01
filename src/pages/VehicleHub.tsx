@@ -300,7 +300,7 @@ export default function VehicleHub() {
                           <p className="text-sm text-gray-500">
                             <span className="font-medium text-gray-900 capitalize">{entry.activity_type}</span>: {entry.description}
                           </p>
-                          {entry.odometer && (
+                          {entry.odometer && car && (
                             <p className="text-xs text-gray-400 mt-0.5">
                               Odometer: {
                                 (car.unit_preference === 'metric' 
