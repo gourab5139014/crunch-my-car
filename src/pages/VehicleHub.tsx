@@ -303,11 +303,11 @@ export default function VehicleHub() {
                           {entry.odometer && (
                             <p className="text-xs text-gray-400 mt-0.5">
                               Odometer: {
-                                (car.unit_preference === 'metric' 
+                                (car?.unit_preference === 'metric'
                                   ? entry.odometer 
                                   : Math.round(entry.odometer * 0.621371)
                                 ).toLocaleString()
-                              } {car.unit_preference === 'metric' ? 'km' : 'mi'}
+                              } {car?.unit_preference === 'metric' ? 'km' : 'mi'}
                             </p>
                           )}
                         </div>
