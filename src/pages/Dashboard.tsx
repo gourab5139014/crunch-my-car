@@ -34,9 +34,11 @@ export default function Dashboard() {
       const carIds = carsData.map(c => c.id)
       const { data: statsData } = await supabase.rpc('get_fleet_stats', { p_car_ids: carIds })
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const statsMap = (statsData as any[])?.reduce((acc, item) => {
         acc[item.car_id] = item.stats
         return acc
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }, {} as Record<string, any>) || {}
 
       const carsWithStats = carsData.map((car) => ({
@@ -49,6 +51,7 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCars()
   }, [])
 

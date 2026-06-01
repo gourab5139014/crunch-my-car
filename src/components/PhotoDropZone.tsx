@@ -63,7 +63,7 @@ function isHeicFile(file: File): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let libheifCache: any = null
 
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getLibheif(): Promise<any> {
   if (!libheifCache) {
     // Dynamic import keeps the 1.4 MB WASM bundle out of the main chunk.

@@ -64,6 +64,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
   // Pre-fill if editing
   useEffect(() => {
     if (editingRecord) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveTab(editingRecord.type)
       setDate(editingRecord.date)
       setOdometer(editingRecord.odometer != null ? String(kmToMi(editingRecord.odometer)) : '')
