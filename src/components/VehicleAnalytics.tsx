@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-
-export type UnitSystem = 'metric' | 'imperial'
+import { 
+  formatDistance, 
+  formatEfficiency, 
+  getDistanceLabel, 
+  getEfficiencyLabel, 
+  UnitSystem 
+} from '../lib/units'
 
 interface SpendingBreakdown {
   fuel: number
@@ -21,10 +26,6 @@ interface VehicleAnalyticsProps {
   carId: string
   unitPreference: UnitSystem
 }
-
-// Conversion Constants
-const KM_TO_MI = 0.621371
-const KML_TO_MPG = 2.352145
 
 export default function VehicleAnalytics({ carId, unitPreference }: VehicleAnalyticsProps) {
   const [stats, setStats] = useState<VehicleStats | null>(null)
@@ -58,14 +59,12 @@ export default function VehicleAnalytics({ carId, unitPreference }: VehicleAnaly
 
   if (!stats) return null
 
-  const isMetric = unitPreference === 'metric'
-
-  // Calculations
-  const displayDistance = isMetric ? stats.total_distance : Math.round(stats.total_distance * KM_TO_MI)
-  const displayEfficiency = isMetric ? stats.fuel_efficiency : parseFloat((stats.fuel_efficiency * KML_TO_MPG).toFixed(1))
+  // Derived values using centralized units utility
+  const displayDistance = formatDistance(stats.total_distance, unitPreference)
+  const displayEfficiency = formatEfficiency(stats.fuel_efficiency, unitPreference)
   
-  const distanceUnit = isMetric ? 'km' : 'mi'
-  const efficiencyUnit = isMetric ? 'km/L' : 'MPG'
+  const distanceUnit = getDistanceLabel(unitPreference)
+  const efficiencyUnit = getEfficiencyLabel(unitPreference)
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

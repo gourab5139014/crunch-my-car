@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import LogActivityModal, { EditingRecord, ActivityType } from '../components/LogActivityModal'
-import VehicleAnalytics, { UnitSystem } from '../components/VehicleAnalytics'
+import VehicleAnalytics from '../components/VehicleAnalytics'
+import { useProfile } from '../contexts/ProfileContext'
+import { formatDistance, getDistanceLabel, UnitSystem } from '../lib/units'
 
 interface TimelineEntry {
   source_id: string
@@ -16,7 +18,6 @@ interface TimelineEntry {
 interface Car {
   id: string
   name: string
-  unit_preference: UnitSystem
 }
 
 export default function VehicleHub() {
@@ -24,6 +25,7 @@ export default function VehicleHub() {
   const [car, setCar] = useState<Car | null>(null)
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const { profile, loading: profileLoading, updateUnitPreference } = useProfile()
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -50,7 +52,7 @@ export default function VehicleHub() {
     if (!id) return
     ;(async () => {
       const [carResult, timelineResult] = await Promise.all([
-        supabase.from('cars').select('id, name, unit_preference').eq('id', id).single(),
+        supabase.from('cars').select('id, name').eq('id', id).single(),
         supabase.from('vehicle_timeline').select('*').eq('car_id', id).order('date', { ascending: false }),
       ])
 
@@ -110,10 +112,7 @@ export default function VehicleHub() {
 
     const { error } = await supabase
       .from('cars')
-      .update({ 
-        name: car.name,
-        unit_preference: car.unit_preference
-      })
+      .update({ name: car.name })
       .eq('id', id)
 
     if (error) {
@@ -142,13 +141,15 @@ export default function VehicleHub() {
     setLoading(false)
   }
 
-  if (fetching) {
+  if (fetching || profileLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
       </div>
     )
   }
+
+  const system = profile?.unit_preference || 'imperial'
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -183,13 +184,14 @@ export default function VehicleHub() {
       {/* Settings Panel (Collapsible) */}
       {showSettings && car && (
         <div className="bg-white p-6 rounded-lg shadow border border-gray-200 space-y-6 animate-in fade-in slide-in-from-top-4">
-          <form onSubmit={handleUpdateSettings} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <form onSubmit={handleUpdateSettings} className="space-y-4">
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Vehicle Settings</h4>
               <div>
-                <label htmlFor="name" className="block text-sm font-medium leading-6 text-gray-900">
-                  Vehicle Name
+                <label htmlFor="name" className="block text-sm font-medium leading-6 text-gray-700">
+                  Rename Vehicle
                 </label>
-                <div className="mt-2">
+                <div className="mt-2 flex gap-3">
                   <input
                     type="text"
                     name="name"
@@ -199,35 +201,39 @@ export default function VehicleHub() {
                     onChange={(e) => setCar({ ...car, name: e.target.value })}
                     className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 px-3"
                   />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
+            </form>
+
+            <div className="space-y-4">
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Global User Preferences</h4>
               <div>
-                <label htmlFor="unit_preference" className="block text-sm font-medium leading-6 text-gray-900">
-                  Unit System
+                <label htmlFor="unit_preference" className="block text-sm font-medium leading-6 text-gray-700">
+                  Display Units (App-wide)
                 </label>
                 <div className="mt-2">
                   <select
                     id="unit_preference"
-                    value={car.unit_preference}
-                    onChange={(e) => setCar({ ...car, unit_preference: e.target.value as UnitSystem })}
+                    value={system}
+                    onChange={(e) => updateUnitPreference(e.target.value as UnitSystem)}
                     className="block w-full rounded-md border-0 py-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm px-3"
                   >
-                    <option value="imperial">Imperial (MPG, miles)</option>
-                    <option value="metric">Metric (km/L, km)</option>
+                    <option value="imperial">Imperial (MPG, miles, gal)</option>
+                    <option value="metric">Metric (km/L, km, L)</option>
                   </select>
                 </div>
+                <p className="mt-2 text-xs text-gray-500 italic">Changing this will update all your vehicles.</p>
               </div>
             </div>
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={loading}
-                className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50"
-              >
-                Save Settings
-              </button>
-            </div>
-          </form>
+          </div>
+
           <div className="pt-4 border-t border-gray-100">
             <button
               onClick={handleDelete}
@@ -244,8 +250,8 @@ export default function VehicleHub() {
       {car && (
         <VehicleAnalytics 
           carId={car.id} 
-          unitPreference={car.unit_preference} 
-          key={`analytics-${car.id}-${refreshTick}`} 
+          unitPreference={system} 
+          key={`analytics-${car.id}-${refreshTick}-${system}`} 
         />
       )}
 
@@ -300,14 +306,9 @@ export default function VehicleHub() {
                           <p className="text-sm text-gray-500">
                             <span className="font-medium text-gray-900 capitalize">{entry.activity_type}</span>: {entry.description}
                           </p>
-                          {entry.odometer && car && (
+                          {entry.odometer && (
                             <p className="text-xs text-gray-400 mt-0.5">
-                              Odometer: {
-                                (car.unit_preference === 'metric' 
-                                  ? entry.odometer 
-                                  : Math.round(entry.odometer * 0.621371)
-                                ).toLocaleString()
-                              } {car.unit_preference === 'metric' ? 'km' : 'mi'}
+                              Odometer: {formatDistance(entry.odometer, system).toLocaleString()} {getDistanceLabel(system)}
                             </p>
                           )}
                         </div>

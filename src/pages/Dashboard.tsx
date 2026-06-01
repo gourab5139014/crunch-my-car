@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import LogActivityModal from '../components/LogActivityModal'
-import { UnitSystem } from '../components/VehicleAnalytics'
+import { useProfile } from '../contexts/ProfileContext'
+import { formatEfficiency, getEfficiencyLabel } from '../lib/units'
 
 interface Car {
   id: string
   name: string
-  unit_preference: UnitSystem
   avg_efficiency?: number | null
 }
 
@@ -15,13 +15,12 @@ export default function Dashboard() {
   const [cars, setCars] = useState<Car[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const { profile, loading: profileLoading } = useProfile()
 
   async function fetchCars() {
-    // Fetch cars and their basic stats via a join or multiple calls
-    // For the dashboard, we'll call the rpc per car for now (fine for small fleet)
     const { data: carsData, error } = await supabase
       .from('cars')
-      .select('id, name, unit_preference')
+      .select('id, name')
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -33,7 +32,7 @@ export default function Dashboard() {
     if (carsData) {
       const carIds = carsData.map(c => c.id)
       const { data: statsData } = await supabase.rpc('get_fleet_stats', { p_car_ids: carIds })
-      
+
       const statsMap = (statsData as any[])?.reduce((acc, item) => {
         acc[item.car_id] = item.stats
         return acc
@@ -52,7 +51,7 @@ export default function Dashboard() {
     fetchCars()
   }, [])
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -62,8 +61,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Your Vehicles</h2>
+        <div className="flex flex-col">
+          <h2 className="text-2xl font-bold text-gray-900">Your Vehicles</h2>
+          <p className="text-xs text-gray-500">
+            Units: <span className="font-semibold uppercase">{profile?.unit_preference}</span>
+          </p>
+        </div>
         <div className="flex space-x-3">
           {cars.length > 0 && (
             <button
@@ -84,6 +89,7 @@ export default function Dashboard() {
 
       {cars.length === 0 ? (
         <div className="text-center bg-white py-12 px-4 rounded-lg shadow border border-dashed border-gray-300">
+          {/* ... empty state icon ... */}
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
             fill="none"
@@ -113,11 +119,11 @@ export default function Dashboard() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cars.map((car) => {
-            const isMetric = car.unit_preference === 'metric'
+            const system = profile?.unit_preference || 'imperial'
             const efficiency = car.avg_efficiency 
-              ? (isMetric ? car.avg_efficiency : car.avg_efficiency * 2.352).toFixed(1)
+              ? formatEfficiency(car.avg_efficiency, system)
               : null
-            const unit = isMetric ? 'km/L' : 'MPG'
+            const unit = getEfficiencyLabel(system)
 
             return (
               <Link
@@ -173,3 +179,4 @@ export default function Dashboard() {
     </div>
   )
 }
+

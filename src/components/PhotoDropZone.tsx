@@ -1,5 +1,12 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { 
+  formatDistance, 
+  formatVolume, 
+  getDistanceLabel, 
+  getVolumeLabel, 
+  UnitSystem 
+} from '../lib/units'
 
 type Confidence = 'high' | 'low' | 'none'
 type Status = 'idle' | 'dragging' | 'collecting' | 'processing' | 'done' | 'error'
@@ -13,16 +20,13 @@ export interface ExtractionResult {
 
 interface PhotoDropZoneProps {
   onExtracted: (result: ExtractionResult) => void
+  unitSystem: UnitSystem
 }
 
 interface StagedPhoto {
   file: File
   previewUrl: string
 }
-
-// Display helpers — convert stored metric values to American units for the summary
-function toMi(km: number) { return Math.round(km / 1.609344).toLocaleString() }
-function toGal(l: number) { return (l / 3.785411).toFixed(2) }
 
 function canvasToJpeg(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL('image/jpeg', 0.85)
@@ -127,7 +131,7 @@ function isValidImageFile(file: File) {
 
 const MAX_PHOTOS = 5
 
-export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
+export default function PhotoDropZone({ onExtracted, unitSystem }: PhotoDropZoneProps) {
   const [status, setStatus] = useState<Status>('idle')
   const [staged, setStaged] = useState<StagedPhoto[]>([])
   const [result, setResult] = useState<ExtractionResult | null>(null)
@@ -228,12 +232,15 @@ export default function PhotoDropZone({ onExtracted }: PhotoDropZoneProps) {
     : 0
 
   const summaryParts: string[] = []
-  if (result?.odometer != null && result.confidence.odometer !== 'none')
-    summaryParts.push(`${toMi(result.odometer)} mi`)
-  if (result?.volume != null && result.confidence.volume !== 'none')
-    summaryParts.push(`${toGal(result.volume)} gal`)
-  if (result?.total_cost != null && result.confidence.total_cost !== 'none')
+  if (result?.odometer != null && result.confidence.odometer !== 'none') {
+    summaryParts.push(`${formatDistance(result.odometer, unitSystem).toLocaleString()} ${getDistanceLabel(unitSystem)}`)
+  }
+  if (result?.volume != null && result.confidence.volume !== 'none') {
+    summaryParts.push(`${formatVolume(result.volume, unitSystem)} ${getVolumeLabel(unitSystem)}`)
+  }
+  if (result?.total_cost != null && result.confidence.total_cost !== 'none') {
     summaryParts.push(`$${result.total_cost.toFixed(2)}`)
+  }
 
   const missingLabels: string[] = []
   if (result?.confidence.odometer === 'none') missingLabels.push('odometer')

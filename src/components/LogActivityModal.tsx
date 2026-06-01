@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import PhotoDropZone, { type ExtractionResult } from './PhotoDropZone'
+import { useProfile } from '../contexts/ProfileContext'
+import { 
+  formatDistance, 
+  formatVolume, 
+  getDistanceLabel, 
+  getVolumeLabel, 
+  parseOdometer, 
+  parseVolume 
+} from '../lib/units'
 
 type ScanConfidence = 'high' | 'low' | 'none' | null
-
-// American ↔ metric conversions (UI inputs in American; DB stores metric)
-const KM_PER_MILE = 1.609344
-const L_PER_GAL = 3.785411
-function miToKm(mi: number) { return mi * KM_PER_MILE }
-function kmToMi(km: number) { return Math.round(km / KM_PER_MILE) }
-function galToL(gal: number) { return gal * L_PER_GAL }
-function lToGal(l: number) { return parseFloat((l / L_PER_GAL).toFixed(3)) }
 
 export type ActivityType = 'fuel' | 'service' | 'expense'
 
@@ -41,24 +42,24 @@ interface LogActivityModalProps {
 
 export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, editingRecord }: LogActivityModalProps) {
   const [activeTab, setActiveTab] = useState<ActivityType>(editingRecord?.type ?? 'fuel')
-  const [selectedCarId, setSelectedCarId] = useState(cars.length > 0 ? cars[0].id : '')
+  const [selectedCarId, setSelectedCarId] = useState(cars.length > 0 ? (editingRecord ? '' : cars[0].id) : '')
   const [loading, setLoading] = useState(false)
+  const { profile, loading: profileLoading } = useProfile()
 
-  // Form state in American display units; DB values converted on load and save.
+  const system = profile?.unit_preference || 'imperial'
+
+  // Form state in display units; DB values converted on load and save.
   const [date, setDate] = useState(editingRecord?.date ?? new Date().toISOString().split('T')[0])
-  const [odometer, setOdometer] = useState(
-    editingRecord?.odometer != null ? String(kmToMi(editingRecord.odometer)) : ''
-  )
-  const [gallons, setGallons] = useState(
-    editingRecord?.volume != null ? String(lToGal(editingRecord.volume)) : ''
-  )
+  const [odometer, setOdometer] = useState('')
+  const [volumeDisplay, setVolumeDisplay] = useState('')
+  
   const [cost, setCost] = useState(editingRecord?.total_cost?.toString() ?? '')
   const [description, setDescription] = useState(editingRecord?.description ?? '')
   const [amount, setAmount] = useState(editingRecord?.amount?.toString() ?? '')
   const [category, setCategory] = useState(editingRecord?.category ?? 'General')
 
   const [odometerConf, setOdometerConf] = useState<ScanConfidence>(null)
-  const [gallonsConf, setGallonsConf] = useState<ScanConfidence>(null)
+  const [volumeConf, setVolumeConf] = useState<ScanConfidence>(null)
   const [costConf, setCostConf] = useState<ScanConfidence>(null)
 
   // Pre-fill if editing
@@ -66,8 +67,8 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     if (editingRecord) {
       setActiveTab(editingRecord.type)
       setDate(editingRecord.date)
-      setOdometer(editingRecord.odometer != null ? String(kmToMi(editingRecord.odometer)) : '')
-      setGallons(editingRecord.volume != null ? String(lToGal(editingRecord.volume)) : '')
+      setOdometer(editingRecord.odometer != null ? String(formatDistance(editingRecord.odometer, system)) : '')
+      setVolumeDisplay(editingRecord.volume != null ? String(formatVolume(editingRecord.volume, system)) : '')
       setCost(editingRecord.total_cost?.toString() || '')
       setAmount(editingRecord.amount?.toString() || '')
       setDescription(editingRecord.description || '')
@@ -77,28 +78,28 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
       setActiveTab('fuel')
       setDate(new Date().toISOString().split('T')[0])
       setOdometer('')
-      setGallons('')
+      setVolumeDisplay('')
       setCost('')
       setAmount('')
       setDescription('')
       setCategory('General')
     }
     setOdometerConf(null)
-    setGallonsConf(null)
+    setVolumeConf(null)
     setCostConf(null)
-  }, [editingRecord, isOpen])
+  }, [editingRecord, isOpen, system])
 
-  if (!isOpen) return null
+  if (!isOpen || profileLoading) return null
 
   function handleExtracted(result: ExtractionResult) {
-    // Values are metric (km, liters) — convert to American for form display
+    // Values from AI are metric (km, liters) — convert to Display for form
     if (result.confidence.odometer !== 'none' && result.odometer != null) {
-      setOdometer(String(kmToMi(result.odometer)))
+      setOdometer(String(formatDistance(result.odometer, system)))
       setOdometerConf(result.confidence.odometer)
     }
     if (result.confidence.volume !== 'none' && result.volume != null) {
-      setGallons(String(lToGal(result.volume)))
-      setGallonsConf(result.confidence.volume)
+      setVolumeDisplay(String(formatVolume(result.volume, system)))
+      setVolumeConf(result.confidence.volume)
     }
     if (result.confidence.total_cost !== 'none' && result.total_cost != null) {
       setCost(String(result.total_cost))
@@ -117,7 +118,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     let error;
 
     const commonData = {
-      car_id: selectedCarId,
+      car_id: selectedCarId || (editingRecord ? undefined : cars[0].id),
       user_id: user.id,
       date,
     }
@@ -125,8 +126,8 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     if (activeTab === 'fuel') {
       const fuelData = {
         ...commonData,
-        odometer: Math.round(miToKm(parseFloat(odometer))),
-        volume: galToL(parseFloat(gallons)),
+        odometer: parseOdometer(odometer, system),
+        volume: parseVolume(volumeDisplay, system),
         total_cost: parseFloat(cost),
         unit_system: 'metric',
       }
@@ -140,7 +141,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
     } else if (activeTab === 'service') {
       const serviceData = {
         ...commonData,
-        odometer: Math.round(miToKm(parseFloat(odometer))),
+        odometer: parseOdometer(odometer, system),
         description,
         total_cost: parseFloat(cost)
       }
@@ -283,6 +284,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2 disabled:bg-gray-50 transition-colors"
                         required
                       >
+                        {!editingRecord && <option value="" disabled>Select a vehicle</option>}
                         {cars.map(car => (
                           <option key={car.id} value={car.id}>{car.name}</option>
                         ))}
@@ -304,15 +306,15 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                     {activeTab === 'fuel' && (
                       <>
                         {!editingRecord && (
-                          <PhotoDropZone onExtracted={handleExtracted} />
+                          <PhotoDropZone unitSystem={system} onExtracted={handleExtracted} />
                         )}
 
                         <div>
-                          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                            Odometer (mi)
+                          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 uppercase tracking-tight">
+                            Odometer ({getDistanceLabel(system)})
                             {odometerConf === 'low' && (
-                              <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
-                                ⚠ Verify
+                              <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-yellow-800" title="Low confidence — please verify">
+                                ⚠ VERIFY
                               </span>
                             )}
                           </label>
@@ -326,29 +328,29 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                              Gallons
-                              {gallonsConf === 'low' && (
-                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
-                                  ⚠ Verify
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 uppercase tracking-tight">
+                              Volume ({getVolumeLabel(system)})
+                              {volumeConf === 'low' && (
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ VERIFY
                                 </span>
                               )}
                             </label>
                             <input
                               type="number"
                               step="0.001"
-                              value={gallons}
-                              onChange={(e) => { setGallons(e.target.value); setGallonsConf(null) }}
+                              value={volumeDisplay}
+                              onChange={(e) => { setVolumeDisplay(e.target.value); setVolumeConf(null) }}
                               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
                               required
                             />
                           </div>
                           <div>
-                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 uppercase tracking-tight">
                               Total Cost
                               {costConf === 'low' && (
-                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-800" title="Low confidence — please verify">
-                                  ⚠ Verify
+                                <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-yellow-800" title="Low confidence — please verify">
+                                  ⚠ VERIFY
                                 </span>
                               )}
                             </label>
@@ -368,7 +370,7 @@ export default function LogActivityModal({ isOpen, onClose, cars, onSuccess, edi
                     {activeTab === 'service' && (
                       <>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">Odometer (mi)</label>
+                          <label className="block text-sm font-medium text-gray-700 uppercase tracking-tight">Odometer ({getDistanceLabel(system)})</label>
                           <input
                             type="number"
                             value={odometer}

@@ -2,6 +2,17 @@ import { render, screen } from '@testing-library/react'
 import { vi, describe, it, expect } from 'vitest'
 import LogActivityModal, { type EditingRecord } from './LogActivityModal'
 
+// ── Context mock ──────────────────────────────────────────────────────────────
+
+vi.mock('../contexts/ProfileContext', () => ({
+  useProfile: () => ({
+    profile: { id: 'user-1', unit_preference: 'imperial' },
+    loading: false,
+    updateUnitPreference: vi.fn(),
+    refreshProfile: vi.fn(),
+  }),
+}))
+
 // ── Supabase mock ─────────────────────────────────────────────────────────────
 
 vi.mock('../lib/supabase', () => ({
@@ -70,7 +81,7 @@ describe('unit display', () => {
   it('shows miles and gallons labels on the fuel tab', () => {
     renderModal(null)
     expect(screen.getByText(/Odometer \(mi\)/i)).toBeInTheDocument()
-    expect(screen.getByText(/Gallons/i)).toBeInTheDocument()
+    expect(screen.getByText(/Volume \(gal\)/i)).toBeInTheDocument()
   })
 
   it('converts stored km to miles when editing a fuel record', () => {

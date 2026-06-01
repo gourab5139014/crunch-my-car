@@ -35,7 +35,7 @@ const fakeHeic = new File(['x'], 'photo.heic', { type: '' })
 const fakePdf  = new File(['x'], 'doc.pdf',   { type: 'application/pdf' })
 
 function renderZone(onExtracted = vi.fn()) {
-  return render(<PhotoDropZone onExtracted={onExtracted} />)
+  return render(<PhotoDropZone onExtracted={onExtracted} unitSystem="imperial" />)
 }
 
 function getFileInput() {
@@ -199,16 +199,16 @@ describe('success — all 3 found', () => {
 
     await waitFor(() => expect(screen.getByText(/Re-scan/i)).toBeInTheDocument())
 
-    // 54321 km ÷ 1.609344 = 33754 mi; 42.5 L ÷ 3.785411 = 11.23 gal
+    // 54321 km ÷ 1.609344 = 33754 mi; 42.5 L ÷ 3.785411 = 11.227 gal
     expect(screen.getByText(/33,754 mi/)).toBeInTheDocument()
-    expect(screen.getByText(/11\.2\d gal/)).toBeInTheDocument()
+    expect(screen.getByText(/11\.22\d gal/)).toBeInTheDocument()
     expect(screen.getByText(/\$68\.40/)).toBeInTheDocument()
   })
 
   it('calls onExtracted with metric values', async () => {
     mockInvoke.mockResolvedValueOnce(highConfResult)
     const onExtracted = vi.fn()
-    render(<PhotoDropZone onExtracted={onExtracted} />)
+    render(<PhotoDropZone onExtracted={onExtracted} unitSystem="imperial" />)
     await stageAndScan([fakeJpeg])
 
     await waitFor(() => expect(onExtracted).toHaveBeenCalledOnce())
