@@ -53,6 +53,17 @@ Focus: Readiness for production.
 - [ ] Mobile-responsive UI polish.
 - [ ] Deployment documentation.
 
+## Phase 7: MCP Cloud Connector Implementation
+Focus: Exposing the app as a tool for AI agents.
+- [ ] **Task 7.1: Enable Supabase OAuth 2.1 Server**
+    - Configure OAuth server settings and implement a consent UI.
+- [ ] **Task 7.2: Build MCP Edge Function**
+    - Implement a remote MCP server using Streamable HTTP transport.
+- [ ] **Task 7.3: Implement Core Tools**
+    - `list_vehicles`, `log_refueling`, `get_vehicle_stats`, `get_timeline`.
+- [ ] **Task 7.4: Verification & Documentation**
+    - End-to-end test with Claude Desktop or Claude Code.
+
 ---
 
 ## Current Status
