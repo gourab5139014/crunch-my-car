@@ -53,6 +53,20 @@ Focus: Readiness for production.
 - [ ] Mobile-responsive UI polish.
 - [ ] Deployment documentation.
 
+## Phase 7: MCP Cloud Connector
+Focus: Exposing data to AI agents via Model Context Protocol.
+- [ ] **Task 7.1: Enable OAuth 2.1 Server**
+    - Configure Supabase Auth as an OAuth provider.
+    - Implement React-based consent UI.
+- [ ] **Task 7.2: MCP Edge Function**
+    - Deploy Deno-based MCP server using Streamable HTTP.
+- [ ] **Task 7.3: Tool Implementation**
+    - Expose `list_vehicles`, `get_vehicle_history`, `log_refueling`, etc.
+- [ ] **Task 7.4: Verification**
+    - End-to-end testing with MCP clients (e.g. Claude).
+- [ ] **Task 7.5: CI/CD Integration**
+    - Update GitHub Actions to deploy the new MCP edge function.
+
 ---
 
 ## Current Status
