@@ -53,6 +53,20 @@ Focus: Readiness for production.
 - [ ] Mobile-responsive UI polish.
 - [ ] Deployment documentation.
 
+## Phase 7: MCP Cloud Connector Implementation
+Focus: Exposing the application to AI agents.
+- [ ] **Task 7.1: Enable Supabase OAuth 2.1 Server**
+    - Configure `supabase/config.toml` to enable the OAuth server.
+    - Define and register the application with the local/remote Supabase instances.
+- [ ] **Task 7.2: Implement MCP Edge Function**
+    - Create a new Edge Function `mcp-connector` using `@modelcontextprotocol/sdk`.
+    - Implement the Streamable HTTP transport.
+- [ ] **Task 7.3: Implement MCP Tools**
+    - Map database RPCs and table operations to MCP tools.
+    - Implement `list_vehicles`, `get_vehicle_stats`, and `log_refueling`.
+- [ ] **Task 7.4: Integration Testing**
+    - Verify the MCP connector using the MCP Inspector or a real agent client.
+
 ---
 
 ## Current Status
