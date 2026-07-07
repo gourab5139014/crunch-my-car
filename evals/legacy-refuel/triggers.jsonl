@@ -1,0 +1,10 @@
+{"prompt": "add this refueling to legacy", "shouldTrigger": true}
+{"prompt": "log a fill-up in the old app", "shouldTrigger": true}
+{"prompt": "insert this into the legacy schema", "shouldTrigger": true}
+{"prompt": "which project ref is staging vs prod vs legacy?", "shouldTrigger": true}
+{"prompt": "here's a photo of my odometer and pump receipt — record the fuel in the previous version of the app", "shouldTrigger": true}
+{"prompt": "add a refueling to staging", "shouldTrigger": false}
+{"prompt": "log today's fill-up in the current app", "shouldTrigger": false}
+{"prompt": "run the database pgTAP tests", "shouldTrigger": false}
+{"prompt": "what's the weather in San Francisco?", "shouldTrigger": false}
+{"prompt": "generate an architecture diagram of the app schema", "shouldTrigger": false}

@@ -1,0 +1,31 @@
+name: Skill Evals
+
+# Tier 3 of the skill-honesty harness: behavioral evals (routing + generated
+# INSERT correctness). Non-deterministic and API-cost-bearing, so manual +
+# monthly only, never PR-blocking.
+on:
+  schedule:
+    - cron: '0 9 1 * *' # 1st of the month, 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Trigger/routing eval
+        run: npx tsx scripts/skills/eval-trigger.ts
+
+      - name: INSERT-correctness eval
+        run: npx tsx scripts/skills/eval-insert.ts

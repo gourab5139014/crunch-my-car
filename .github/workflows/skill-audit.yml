@@ -1,0 +1,63 @@
+name: Skill Fact Audit
+
+# Tier 2 of the skill-honesty harness: verifies that live external systems still
+# match what the skills claim (facts.yaml). Non-blocking — drift opens an issue.
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Mondays 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  legacy-refuel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit legacy-refuel-photo-entry facts
+        id: audit
+        env:
+          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.LEGACY_SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/skills/audit-legacy-refuel.ts
+
+      - name: Open/update drift issue
+        if: steps.audit.outputs.has_drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const body = fs.readFileSync('scripts/skills/drift-report.md', 'utf8')
+            const title = 'Skill drift: legacy-refuel-photo-entry'
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'skill-drift',
+            })
+            const match = existing.data.find((i) => i.title === title)
+            if (match) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['skill-drift'],
+              })
+            }
