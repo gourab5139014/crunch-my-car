@@ -1,0 +1,39 @@
+[
+  {
+    "name": "costco-regular-fill",
+    "extracted": {
+      "date": "2026-06-27",
+      "odometer_miles": 222809,
+      "previous_odometer_miles": 222579,
+      "volume_gal": 12.323,
+      "price_per_gal": 5.099,
+      "total_cost": 62.83,
+      "station": "Costco El Camino #475"
+    },
+    "expect": {
+      "distance_mi": 230,
+      "odometer": 222809,
+      "volume_gal": 12.323,
+      "fuel_type": "Gasoline",
+      "full_tank": true
+    }
+  },
+  {
+    "name": "shell-partial-fill",
+    "extracted": {
+      "date": "2026-07-02",
+      "odometer_miles": 223100,
+      "previous_odometer_miles": 222809,
+      "volume_gal": 8.5,
+      "price_per_gal": 5.299,
+      "total_cost": 45.04,
+      "station": "Shell Mountain View"
+    },
+    "expect": {
+      "distance_mi": 291,
+      "odometer": 223100,
+      "volume_gal": 8.5,
+      "fuel_type": "Gasoline"
+    }
+  }
+]

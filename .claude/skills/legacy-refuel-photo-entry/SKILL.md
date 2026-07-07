@@ -25,6 +25,8 @@ Insert a single refueling record into the **legacy** Supabase project from an od
 
 ## 2. Legacy project schema layout
 
+> **Machine-checked facts live in [`facts.yaml`](./facts.yaml)** (same directory). That file is the authoritative source for the automated skill-audit and lint; the tables below are the human-readable mirror. If you change a project ref, schema, column, or identifier, update `facts.yaml` too and bump its `last_verified` date. _Last verified: 2026-06-27._
+
 Exposed (Data-API) schemas on the legacy project: `public, graphql_public, legacy, dev, app`.
 
 The real historical data is in the **`legacy`** schema (lowercase — `Legacy` is rejected with `PGRST106 Invalid schema`). Tables in `legacy`:

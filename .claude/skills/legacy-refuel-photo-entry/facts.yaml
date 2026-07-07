@@ -1,0 +1,56 @@
+# Machine-checked source of truth for the legacy-refuel-photo-entry skill.
+#
+# The prose tables in SKILL.md are human-readable; THIS file is authoritative
+# for the automated skill-audit (scripts/skills/audit-legacy-refuel.ts) and the
+# structural lint (scripts/skills/skill-lint.test.ts). Keep the two in sync —
+# the audit compares live DB introspection against the values below and reports
+# drift when they diverge.
+#
+# Principle: minimize hardcoded volatile data; where unavoidable, store it once
+# here with a `last_verified` date rather than duplicating it across prose.
+
+last_verified: "2026-06-27"
+
+# Supabase project ref -> environment. NOTE: CLAUDE.md mislabels the legacy ref
+# as "Production" — that is stale. See SKILL.md §1.
+projects:
+  cofmlyvqhxjkmyzbtrsy: legacy
+  yiejtkppiwhzedyfeyuv: staging
+
+legacy_project_ref: cofmlyvqhxjkmyzbtrsy
+
+legacy_schema:
+  name: legacy
+  # Data-API-exposed schemas on the legacy project (SKILL.md §2).
+  exposed_schemas: [public, graphql_public, legacy, dev, app]
+  tables:
+    # legacy uses `vehicles`, not `cars`.
+    vehicles: {}
+    services: {}
+    expenses: {}
+    refuelings:
+      # Units are IMPERIAL — no metric conversion (unlike the current `app` schema).
+      insert_target: true
+      columns:
+        - { name: id,            type: uuid,        nullable: true,  default: "gen_random_uuid()" }
+        - { name: created_at,    type: timestamptz, nullable: true,  default: "now()" }
+        - { name: date,          type: date,        nullable: false }
+        - { name: odometer,      type: integer,     nullable: false }   # miles
+        - { name: volume_gal,    type: numeric,     nullable: true }    # gallons
+        - { name: price_per_gal, type: numeric,     nullable: true }
+        - { name: total_cost,    type: numeric,     nullable: true }
+        - { name: fuel_type,     type: text,        nullable: true,  default: "'Gasoline'" }
+        - { name: full_tank,     type: boolean,     nullable: true,  default: "true" }
+        - { name: distance_mi,   type: numeric,     nullable: true }    # odometer - previous fill's odometer
+        - { name: notes,         type: text,        nullable: true }
+        - { name: user_id,       type: uuid,        nullable: false, default: "auth.uid()" }  # set explicitly under service role
+        - { name: vehicle_id,    type: uuid,        nullable: true }    # FK -> legacy.vehicles.id
+
+# Known identifiers for this user's data (SKILL.md §2). These are the most
+# drift-prone facts — the audit confirms the vehicle row still exists.
+identifiers:
+  vehicle:
+    id: e86fb69c-a00a-4480-bed1-aa218ca348d7
+    label: "Primary Lexus / Lexus ES 350 (2010)"
+  # Distinct from the staging user id — same person, different project.
+  user_id: 5423b575-98f5-4522-acf4-4f3ff4f12f26

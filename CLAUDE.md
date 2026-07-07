@@ -49,3 +49,13 @@ GitHub Actions in `.github/workflows/` handle automated `supabase db push` to st
 - **SQL must follow the `supabase-postgres-best-practices` skill** — apply it for all DDL and query writing.
 - Schema changes must go through migration files (`supabase/migrations/`), generated via `supabase db diff`. Never apply ad-hoc DDL to remote projects directly.
 - RLS policies are required on all new tables. Tests for isolation go in `supabase/tests/database/`.
+
+## Testing skills (keeping `.claude/skills` honest)
+
+A skill is **prose + embedded facts**, not executable code, so "correctness" means facts don't silently go stale. Skills are kept honest three ways — prefer the cheapest layer that covers a given fact, and lean on **defensive prose** first (a skill should tell the agent to re-verify volatile values before acting rather than trusting hardcoded ones):
+
+1. **Static lint (`npm run skill:lint`)** — runs under vitest on every PR (`scripts/skills/skill-lint.test.ts`). Scans all `.claude/skills/*/SKILL.md`: validates frontmatter, asserts every referenced repo path exists, checks relative links, and validates any `facts.yaml`. No credentials. This is where "test skills like source code" actually happens.
+2. **Fact-audit (`.github/workflows/skill-audit.yml`, weekly)** — verifies live external contracts against a skill's `facts.yaml` sidecar and opens a `skill-drift` issue on divergence. Credential-gated + non-blocking.
+3. **Evals (`.github/workflows/skill-eval.yml`, monthly / manual)** — non-deterministic behavior checks (trigger routing + generated output). A pass is a threshold, not a proof.
+
+When a skill hardcodes volatile facts (project refs, schema columns, IDs), put them in a `facts.yaml` sidecar with a `last_verified` date so the audit can diff them — don't scatter them across prose.

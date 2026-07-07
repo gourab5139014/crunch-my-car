@@ -29,4 +29,17 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Node-side skill tooling (Tier 1-3 harness) — not browser code.
+    files: ['scripts/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: {
+        project: ['./scripts/tsconfig.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    plugins: {},
+    rules: {},
+  },
 )
